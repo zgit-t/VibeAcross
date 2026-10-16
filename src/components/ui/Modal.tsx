@@ -2,6 +2,7 @@ import { X } from "lucide-react";
 import { useEffect, useId, useRef } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { t } from "../../i18n/translate";
 import { IconButton } from "./IconButton";
 import styles from "./Modal.module.css";
 
@@ -124,7 +125,7 @@ export function Modal({
               </p>
             )}
           </div>
-          <IconButton label="关闭" size="sm" onClick={onClose}>
+          <IconButton label={t("common.close")} size="sm" onClick={onClose}>
             <X size={16} aria-hidden="true" />
           </IconButton>
         </header>

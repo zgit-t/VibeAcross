@@ -1,8 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus, RotateCcw, Wrench } from "lucide-react";
+import { useApp } from "../context/AppContext";
 import { useProjects } from "../context/ProjectsContext";
 import { useTools } from "../context/ToolsContext";
 import { useWorkspace } from "../context/WorkspaceContext";
+import { useI18n } from "../i18n";
 import { PageHeader } from "../components/layout/PageHeader";
 import { Section } from "../components/layout/Section";
 import { Badge } from "../components/ui/Badge";
@@ -12,9 +14,9 @@ import { Notice } from "../components/ui/Notice";
 import { SessionDialog } from "../features/workspace/SessionDialog";
 import { SessionList } from "../features/workspace/SessionList";
 import {
-  RESTORE_LEVEL_LABEL,
+  RESTORE_LEVEL_KEY,
   RESTORE_LEVEL_TONE,
-  SESSION_RESUME_LABEL,
+  SESSION_RESUME_KEY,
   SESSION_RESUME_TONE,
 } from "../features/workspace/meta";
 import type { ToolEntry, WorkspaceSession } from "../types/domain";
@@ -23,11 +25,26 @@ import styles from "./SessionsPage.module.css";
 /** 工作上下文页面：查看、恢复与管理「项目 + 工具 + 任务」组合。 */
 export function SessionsPage() {
   const { sessions, loading, error } = useWorkspace();
+  const { pendingSessionId, clearPendingSession } = useApp();
   const { projects } = useProjects();
   const { tools } = useTools();
+  const { t } = useI18n();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<WorkspaceSession | null>(null);
+
+  // 消费来自全局搜索等处的上下文深链，打开对应记录的编辑弹窗。
+  useEffect(() => {
+    if (!pendingSessionId) {
+      return;
+    }
+    const target = sessions.find((session) => session.id === pendingSessionId);
+    if (target) {
+      setEditing(target);
+      setDialogOpen(true);
+    }
+    clearPendingSession();
+  }, [pendingSessionId, sessions, clearPendingSession]);
 
   const toolById = useMemo(() => {
     const map: Record<string, ToolEntry> = {};
@@ -68,8 +85,8 @@ export function SessionsPage() {
   return (
     <div className={styles.page}>
       <PageHeader
-        title="Sessions"
-        description="保存并一键恢复你的工作环境（项目、开发工具与任务）。"
+        title={t("sessions.title")}
+        description={t("sessions.description")}
         actions={
           <Button
             variant="primary"
@@ -77,7 +94,7 @@ export function SessionsPage() {
             onClick={openCreate}
             disabled={projects.length === 0}
           >
-            Save Context
+            {t("sessions.save")}
           </Button>
         }
       />
@@ -85,17 +102,17 @@ export function SessionsPage() {
       {error && <Notice tone="danger">{error}</Notice>}
 
       {projects.length === 0 && (
-        <Notice tone="info" title="先创建项目">
-          工作上下文需要关联一个项目。请先在 Projects 页面创建或导入项目。
+        <Notice tone="info" title={t("sessions.needProjectTitle")}>
+          {t("sessions.needProjectBody")}
         </Notice>
       )}
 
       <Section
-        title="Saved Contexts"
+        title={t("sessions.savedContexts")}
         description={
           loading
-            ? "加载中…"
-            : `共 ${sessions.length} 条记录，按最近使用排序。`
+            ? t("common.loading")
+            : t("sessions.count", { count: sessions.length })
         }
       >
         {sessions.length > 0 ? (
@@ -109,8 +126,8 @@ export function SessionsPage() {
         ) : (
           <EmptyState
             icon={RotateCcw}
-            title="还没有保存的工作上下文"
-            description="保存一个「项目 + 工具 + 任务」组合，之后即可一键恢复工作环境。"
+            title={t("sessions.emptyTitle")}
+            description={t("sessions.emptyDescription")}
             action={
               <Button
                 variant="primary"
@@ -118,7 +135,7 @@ export function SessionsPage() {
                 onClick={openCreate}
                 disabled={projects.length === 0}
               >
-                Save Context
+                {t("sessions.save")}
               </Button>
             }
           />
@@ -126,8 +143,8 @@ export function SessionsPage() {
       </Section>
 
       <Section
-        title="恢复能力与限制"
-        description="各开发工具实际支持的恢复层级；未经验证的机制不会被标记为可用。"
+        title={t("sessions.capabilityTitle")}
+        description={t("sessions.capabilityDescription")}
       >
         {detectedTools.length > 0 ? (
           <ul className={styles.capabilityList}>
@@ -139,10 +156,10 @@ export function SessionsPage() {
                     {tool.name}
                   </span>
                   <Badge tone={RESTORE_LEVEL_TONE[tool.restore.level]}>
-                    {RESTORE_LEVEL_LABEL[tool.restore.level]}
+                    {t(RESTORE_LEVEL_KEY[tool.restore.level])}
                   </Badge>
                   <Badge tone={SESSION_RESUME_TONE[tool.restore.session]}>
-                    {SESSION_RESUME_LABEL[tool.restore.session]}
+                    {t(SESSION_RESUME_KEY[tool.restore.session])}
                   </Badge>
                 </div>
                 <p className={styles.capabilityReason}>{tool.restore.levelReason}</p>
@@ -156,16 +173,13 @@ export function SessionsPage() {
           <EmptyState
             compact
             icon={Wrench}
-            title="尚未检测到工具"
-            description="前往 Tools 页面检测或手动添加工具后，这里会显示其恢复能力。"
+            title={t("sessions.noToolsTitle")}
+            description={t("sessions.noToolsDescription")}
           />
         )}
       </Section>
 
-      <Notice tone="info">
-        当前版本实现 Level 1（恢复项目、工作目录与所选工具）。会话恢复（Level 2/3）
-        仅在工具提供官方公开机制时标注，且尚未在本机验证，因此不提供对应操作。
-      </Notice>
+      <Notice tone="info">{t("sessions.notice")}</Notice>
 
       <SessionDialog
         open={dialogOpen}

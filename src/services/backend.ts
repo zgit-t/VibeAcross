@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { t } from "../i18n/translate";
 import type { AppInfo } from "../types/backend";
 
 /**
@@ -41,10 +42,10 @@ export function isBackendError(value: unknown): value is BackendError {
   );
 }
 
-/** 将任意错误转换为可展示的中文提示。 */
+/** 将任意错误转换为可展示的提示文案（回退到当前语言）。 */
 export function toErrorMessage(
   error: unknown,
-  fallback = "操作失败，请重试。",
+  fallback: string = t("error.genericDefault"),
 ): string {
   if (isBackendError(error)) {
     return error.message;
@@ -58,5 +59,7 @@ export function toErrorMessage(
   return fallback;
 }
 
-/** 非桌面运行时的统一提示文案。 */
-export const NOT_DESKTOP_MESSAGE = "当前不在桌面应用中运行，无法访问本地数据。";
+/** 非桌面运行时的统一提示文案（按当前语言解析）。 */
+export function notDesktopMessage(): string {
+  return t("error.notDesktop");
+}

@@ -6,7 +6,6 @@ import { ProjectsPage } from "../../pages/ProjectsPage";
 import { ToolsPage } from "../../pages/ToolsPage";
 import { TasksPage } from "../../pages/TasksPage";
 import { SessionsPage } from "../../pages/SessionsPage";
-import { ActivityPage } from "../../pages/ActivityPage";
 import { SettingsPage } from "../../pages/SettingsPage";
 import type { ViewId } from "../../types/navigation";
 import styles from "./AppShell.module.css";
@@ -23,8 +22,6 @@ function renderView(view: ViewId) {
       return <TasksPage />;
     case "sessions":
       return <SessionsPage />;
-    case "activity":
-      return <ActivityPage />;
     case "settings":
       return <SettingsPage />;
     default:

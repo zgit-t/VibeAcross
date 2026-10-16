@@ -1,4 +1,4 @@
-﻿//! Phase 5：项目与工具关联、受控启动的集成测试。
+//! Phase 5：项目与工具关联、受控启动的集成测试。
 //!
 //! 进程创建通过注入 `RecordingLauncher` 记录，不真正启动任何工具；
 //! 另有一个使用真实 `cmd.exe` 的测试，验证工作目录与参数确实被正确传递。
@@ -9,7 +9,7 @@ use std::sync::Mutex;
 
 use vibeacross_lib::db::Database;
 use vibeacross_lib::launch::{
-    self, LaunchError, LaunchGuard, LaunchMode, LaunchSpec, ProcessLauncher,
+    self, LaunchError, LaunchGuard, LaunchMode, LaunchSpec, LaunchTarget, ProcessLauncher,
 };
 use vibeacross_lib::projects;
 use vibeacross_lib::tools::detect::{DetectError, Detector, RegistryInstall, VersionOutcome};
@@ -54,6 +54,16 @@ impl ProcessLauncher for RecordingLauncher {
     }
 }
 
+/// 始终失败的启动器，用于验证「启动失败」被如实上报且可重试。
+#[derive(Default)]
+struct FailingLauncher;
+
+impl ProcessLauncher for FailingLauncher {
+    fn launch(&self, _spec: &LaunchSpec) -> Result<u32, LaunchError> {
+        Err(LaunchError::new("模拟：操作系统拒绝启动"))
+    }
+}
+
 /// 只判断「文件是否存在」的检测器，用于登记已检测到的工具。
 #[derive(Default)]
 struct StubDetector {
@@ -89,6 +99,10 @@ impl Detector for StubDetector {
 
     fn registry_installs(&self, _keywords: &[&str]) -> Vec<RegistryInstall> {
         Vec::new()
+    }
+
+    fn app_path(&self, _exe_name: &str) -> Option<PathBuf> {
+        None
     }
 
     fn query_version(&self, _executable: &Path, _args: &[&str]) -> VersionOutcome {
@@ -306,6 +320,8 @@ fn desktop_tool_launches_with_folder_argument() {
     let result = launch::launch(&conn, &launcher, &guard, &project.id, None, &detector).unwrap();
     assert_eq!(result.method, LaunchMethod::FolderArgument);
     assert_eq!(result.tool_name, "Cursor");
+    // 只创建进程，不应谎报已在工具中初始化任务或会话。
+    assert!(!result.context_initialized);
 
     let spec = launcher.last();
     assert_eq!(spec.mode, LaunchMode::Detached);
@@ -402,7 +418,8 @@ fn workbuddy_launch_is_reported_as_unsupported() {
 }
 
 #[test]
-fn script_based_cli_requires_configuration() {
+fn script_based_cli_launches_via_command_interpreter() {
+    // Windows 上 npm 安装的 CLI 工具通常只有 `.cmd` 入口；必须经受控的命令解释器启动。
     let workspace = tempfile::tempdir().unwrap();
     let project_dir = workspace.path().join("proj");
     std::fs::create_dir(&project_dir).unwrap();
@@ -418,9 +435,47 @@ fn script_based_cli_requires_configuration() {
     let tool_id = add_tool(&conn, &detector, tool_input("opencode", &script));
     launch::set_project_tool(&conn, &project.id, Some(&tool_id), &detector).unwrap();
 
-    let error = launch::launch(&conn, &launcher, &guard, &project.id, None, &detector).unwrap_err();
-    assert_eq!(error.code, "LAUNCH_NEEDS_CONFIGURATION");
-    assert_eq!(launcher.count(), 0);
+    let result = launch::launch(&conn, &launcher, &guard, &project.id, None, &detector).unwrap();
+    assert_eq!(result.method, LaunchMethod::WorkingDirectory);
+
+    let spec = launcher.last();
+    assert_eq!(spec.mode, LaunchMode::Console);
+    assert!(
+        spec.args.is_empty(),
+        "命令行工具不应被注入额外参数：{:?}",
+        spec.args
+    );
+    assert!(
+        matches!(spec.target, LaunchTarget::CommandScript { .. }),
+        "`.cmd` 工具必须经命令解释器启动"
+    );
+}
+
+#[test]
+fn launch_failure_is_reported_and_retryable() {
+    let workspace = tempfile::tempdir().unwrap();
+    let project_dir = workspace.path().join("proj");
+    std::fs::create_dir(&project_dir).unwrap();
+    let exe = stub_exe(workspace.path(), "Cursor.exe");
+
+    let db = memory_db();
+    let conn = db.conn().unwrap();
+    let detector = StubDetector::new().with_file(&exe);
+    let launcher = FailingLauncher;
+    let guard = LaunchGuard::new();
+
+    let project = projects::import_project(&conn, project_dir.to_str().unwrap(), None).unwrap();
+    let tool_id = add_tool(&conn, &detector, tool_input("cursor", &exe));
+    launch::set_project_tool(&conn, &project.id, Some(&tool_id), &detector).unwrap();
+
+    let error =
+        launch::launch(&conn, &launcher, &guard, &project.id, None, &detector).unwrap_err();
+    assert_eq!(error.code, "LAUNCH_FAILED");
+
+    // 失败必须清除防抖记录，允许用户立即重试（仍会失败，但不应是 LAUNCH_DUPLICATE）。
+    let retry =
+        launch::launch(&conn, &launcher, &guard, &project.id, None, &detector).unwrap_err();
+    assert_eq!(retry.code, "LAUNCH_FAILED");
 }
 
 #[test]
@@ -584,6 +639,7 @@ fn system_launcher_honors_working_dir_and_arguments() {
         ],
         working_dir: project_dir.clone(),
         mode: LaunchMode::Detached,
+        target: LaunchTarget::Direct,
     };
 
     let pid = SystemLauncher::new().launch(&spec).expect("应能创建真实进程");
@@ -617,5 +673,52 @@ fn system_launcher_honors_working_dir_and_arguments() {
         normalize(&recorded_cwd),
         normalize(&expected),
         "工作目录应被正确传递"
+    );
+}
+
+/// Windows 专有行为：验证 `.cmd` 经命令解释器启动时，含空格的工作目录与脚本
+/// 路径都被正确处理（真机执行）。
+#[cfg(windows)]
+#[test]
+fn system_launcher_runs_cmd_script_with_spaces_in_working_directory() {
+    use vibeacross_lib::launch::{windows_command_interpreter, SystemLauncher};
+
+    let workspace = tempfile::tempdir().unwrap();
+    let project_dir = workspace.path().join("proj with space");
+    std::fs::create_dir_all(&project_dir).unwrap();
+    let script = project_dir.join("echo cwd.cmd");
+    std::fs::write(&script, b"@echo off\r\ncd > out.txt\r\n").unwrap();
+
+    let spec = LaunchSpec {
+        executable: script,
+        args: Vec::new(),
+        working_dir: project_dir.clone(),
+        // 测试用无窗口模式，避免弹出控制台窗口。
+        mode: LaunchMode::Detached,
+        target: LaunchTarget::CommandScript {
+            interpreter: windows_command_interpreter(),
+        },
+    };
+
+    let pid = SystemLauncher::new()
+        .launch(&spec)
+        .expect("应能经命令解释器启动 .cmd");
+    assert!(pid > 0);
+
+    let out = project_dir.join("out.txt");
+    let mut content = String::new();
+    for _ in 0..50 {
+        if let Ok(text) = std::fs::read_to_string(&out) {
+            if !text.trim().is_empty() {
+                content = text;
+                break;
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+
+    assert!(
+        !content.trim().is_empty(),
+        "含空格的脚本应在含空格的工作目录中执行并写入 out.txt"
     );
 }

@@ -1,15 +1,18 @@
 use serde::Serialize;
 use tauri::Manager;
 
-pub mod activity;
+pub mod backup;
 pub mod commands;
 pub mod db;
 pub mod error;
+pub mod health;
 pub mod launch;
 pub mod migrations;
 pub mod models;
 pub mod projects;
+pub mod search;
 pub mod settings;
+pub mod shell;
 pub mod tasks;
 pub mod tools;
 pub mod workspace;
@@ -76,13 +79,20 @@ pub fn run() {
             commands::touch_project_opened,
             commands::relocate_project,
             commands::remove_project,
+            commands::check_project_health,
+            commands::open_project_dir,
             commands::set_project_tool,
             commands::launch_project,
             commands::get_settings,
             commands::update_settings,
             commands::get_storage_info,
+            commands::suggested_backup_file_name,
+            commands::create_backup,
+            commands::inspect_backup,
+            commands::restore_backup,
             commands::list_tools,
             commands::detect_tools,
+            commands::revalidate_tool,
             commands::add_tool,
             commands::update_tool,
             commands::remove_tool,
@@ -95,8 +105,7 @@ pub fn run() {
             commands::set_task_status,
             commands::delete_task,
             commands::task_stats,
-            commands::list_activity,
-            commands::clear_activity,
+            commands::global_search,
             commands::list_workspace_sessions,
             commands::last_workspace_session,
             commands::create_workspace_session,

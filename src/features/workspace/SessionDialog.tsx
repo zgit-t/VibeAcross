@@ -8,6 +8,7 @@ import { TextField } from "../../components/ui/TextField";
 import { useTaskList } from "../../context/TasksContext";
 import { useTools } from "../../context/ToolsContext";
 import { useWorkspace } from "../../context/WorkspaceContext";
+import { useI18n } from "../../i18n";
 import { toErrorMessage } from "../../services/backend";
 import type { WorkspaceSession } from "../../types/domain";
 import { restorableTools } from "./meta";
@@ -43,6 +44,7 @@ export function SessionDialog({
 }: SessionDialogProps) {
   const { createSession, updateSession } = useWorkspace();
   const { tools } = useTools();
+  const { t } = useI18n();
 
   const [projectId, setProjectId] = useState("");
   const [toolId, setToolId] = useState("");
@@ -92,10 +94,10 @@ export function SessionDialog({
     event.preventDefault();
     const nextErrors: FormErrors = {};
     if (!projectId) {
-      nextErrors.project = "请选择关联项目。";
+      nextErrors.project = t("sessionDialog.errProject");
     }
     if (label.trim().length > 120) {
-      nextErrors.label = "名称请控制在 120 个字符以内。";
+      nextErrors.label = t("sessionDialog.errLabel");
     }
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
@@ -118,7 +120,7 @@ export function SessionDialog({
       }
       onClose();
     } catch (cause) {
-      setSubmitError(toErrorMessage(cause, "保存工作上下文失败。"));
+      setSubmitError(toErrorMessage(cause, t("sessionDialog.failed")));
     } finally {
       setBusy(false);
     }
@@ -130,17 +132,21 @@ export function SessionDialog({
     <Modal
       open={open}
       onClose={busy ? () => undefined : onClose}
-      title={isEditing ? "编辑工作上下文" : "保存工作上下文"}
+      title={
+        isEditing
+          ? t("sessionDialog.titleEdit")
+          : t("sessionDialog.titleCreate")
+      }
       description={
         isEditing
-          ? "更新关联的工具、任务与名称。项目不可更改。"
-          : "保存当前「项目 + 工具 + 任务」组合，便于之后一键恢复。"
+          ? t("sessionDialog.descriptionEdit")
+          : t("sessionDialog.descriptionCreate")
       }
       size="md"
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={busy}>
-            取消
+            {t("common.cancel")}
           </Button>
           <Button
             variant="primary"
@@ -148,21 +154,25 @@ export function SessionDialog({
             form="session-form"
             disabled={busy || noProjects}
           >
-            {busy ? "保存中…" : isEditing ? "保存" : "创建"}
+            {busy
+              ? t("common.saving")
+              : isEditing
+                ? t("common.save")
+                : t("common.create")}
           </Button>
         </>
       }
     >
       {noProjects ? (
-        <Notice tone="warning" title="需要先创建项目">
-          工作上下文必须关联一个项目。请先在 Projects 页面创建或导入项目。
+        <Notice tone="warning" title={t("sessionDialog.needProjectTitle")}>
+          {t("sessionDialog.needProjectBody")}
         </Notice>
       ) : (
         <form id="session-form" className={styles.form} onSubmit={handleSubmit}>
           {submitError && <Notice tone="danger">{submitError}</Notice>}
 
           <SelectField
-            label="关联项目"
+            label={t("sessionDialog.projectLabel")}
             value={projectId}
             disabled={isEditing}
             options={projectOptions.map((project) => ({
@@ -174,39 +184,39 @@ export function SessionDialog({
           />
 
           <SelectField
-            label="开发工具"
+            label={t("sessionDialog.toolLabel")}
             value={toolId}
             options={[
-              { value: "", label: "未指定（恢复时选择）" },
+              { value: "", label: t("sessionDialog.toolNone") },
               ...toolOptions.map((tool) => ({
                 value: tool.id,
                 label: tool.name,
               })),
             ]}
-            hint="仅列出具备受控启动能力的工具。"
+            hint={t("sessionDialog.toolHint")}
             onChange={(event) => setToolId(event.target.value)}
           />
 
           <SelectField
-            label="关联任务"
+            label={t("sessionDialog.taskLabel")}
             value={taskId}
             options={[
-              { value: "", label: "不关联任务" },
+              { value: "", label: t("sessionDialog.taskNone") },
               ...tasks.map((task) => ({
                 value: task.id,
                 label: task.title,
               })),
             ]}
-            hint="可选。任务被删除后工作上下文仍可继续使用。"
+            hint={t("sessionDialog.taskHint")}
             onChange={(event) => setTaskId(event.target.value)}
           />
 
           <TextField
-            label="名称"
-            placeholder="例如：登录功能开发"
+            label={t("sessionDialog.nameLabel")}
+            placeholder={t("sessionDialog.namePlaceholder")}
             value={label}
             error={errors.label}
-            hint="可选。用于在列表中区分多条上下文。"
+            hint={t("sessionDialog.nameHint")}
             onChange={(event) => setLabel(event.target.value)}
           />
         </form>

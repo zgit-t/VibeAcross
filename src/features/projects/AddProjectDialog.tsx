@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { FolderOpen } from "lucide-react";
 import { useApp } from "../../context/AppContext";
 import { useProjects } from "../../context/ProjectsContext";
+import { useI18n } from "../../i18n";
 import { Button } from "../../components/ui/Button";
 import { Modal } from "../../components/ui/Modal";
 import { Notice } from "../../components/ui/Notice";
@@ -14,11 +15,6 @@ import type { Project } from "../../types/domain";
 import styles from "./AddProjectDialog.module.css";
 
 type Mode = "create" | "import";
-
-const MODE_OPTIONS: Array<{ value: Mode; label: string }> = [
-  { value: "create", label: "创建新项目" },
-  { value: "import", label: "导入已有目录" },
-];
 
 interface AddProjectDialogProps {
   open: boolean;
@@ -40,6 +36,15 @@ export function AddProjectDialog({
 }: AddProjectDialogProps) {
   const { defaultProjectFolder } = useApp();
   const { createProject, importProject } = useProjects();
+  const { t } = useI18n();
+
+  const modeOptions = useMemo<Array<{ value: Mode; label: string }>>(
+    () => [
+      { value: "create", label: t("addProject.modeCreate") },
+      { value: "import", label: t("addProject.modeImport") },
+    ],
+    [t],
+  );
 
   const [mode, setMode] = useState<Mode>("create");
   const [name, setName] = useState("");
@@ -98,13 +103,13 @@ export function AddProjectDialog({
 
     if (mode === "create") {
       if (!name.trim()) {
-        nextErrors.name = "请输入项目名称。";
+        nextErrors.name = t("addProject.errName");
       }
       if (!location.trim()) {
-        nextErrors.location = "请选择项目所在目录。";
+        nextErrors.location = t("addProject.errLocation");
       }
     } else if (!importPath.trim()) {
-      nextErrors.path = "请选择要导入的目录。";
+      nextErrors.path = t("addProject.errPath");
     }
 
     setErrors(nextErrors);
@@ -126,7 +131,7 @@ export function AddProjectDialog({
       reset();
       onClose();
     } catch (cause) {
-      setErrorMessage(toErrorMessage(cause, "添加项目失败。"));
+      setErrorMessage(toErrorMessage(cause, t("addProject.failed")));
       setBusy(false);
     }
   }
@@ -140,13 +145,13 @@ export function AddProjectDialog({
     <Modal
       open={open}
       onClose={handleClose}
-      title="添加项目"
-      description="创建新的项目目录，或导入一个已存在的本地目录。"
+      title={t("addProject.title")}
+      description={t("addProject.description")}
       size="md"
       footer={
         <>
           <Button variant="secondary" onClick={handleClose} disabled={busy}>
-            取消
+            {t("common.cancel")}
           </Button>
           <Button
             variant="primary"
@@ -154,15 +159,19 @@ export function AddProjectDialog({
             form="add-project-form"
             disabled={busy}
           >
-            {busy ? "处理中…" : mode === "create" ? "创建" : "导入"}
+            {busy
+              ? t("common.processing")
+              : mode === "create"
+                ? t("common.create")
+                : t("common.import")}
           </Button>
         </>
       }
     >
       <form id="add-project-form" className={styles.form} onSubmit={handleSubmit}>
         <SegmentedControl
-          ariaLabel="添加项目方式"
-          options={MODE_OPTIONS}
+          ariaLabel={t("addProject.modeAria")}
+          options={modeOptions}
           value={mode}
           onChange={(next) => {
             setMode(next);
@@ -174,61 +183,62 @@ export function AddProjectDialog({
         {mode === "create" ? (
           <>
             <TextField
-              label="项目名称"
-              placeholder="例如 my-project"
+              label={t("addProject.nameLabel")}
+              placeholder={t("addProject.namePlaceholder")}
               value={name}
               required
               error={errors.name}
               onChange={(event) => setName(event.target.value)}
             />
-            <div className={styles.pickerRow}>
-              <TextField
-                label="所在目录"
-                placeholder="选择一个已存在的目录"
-                value={location}
-                required
-                error={errors.location}
-                hint="新项目目录将创建在该目录下。"
-                onChange={(event) => setLocation(event.target.value)}
-              />
-              <Button
-                variant="secondary"
-                icon={<FolderOpen size={14} aria-hidden="true" />}
-                onClick={browseForLocation}
-                type="button"
-              >
-                浏览…
-              </Button>
-            </div>
+            <TextField
+              label={t("addProject.locationLabel")}
+              placeholder={t("addProject.locationPlaceholder")}
+              value={location}
+              required
+              error={errors.location}
+              hint={t("addProject.locationHint")}
+              trailing={
+                <Button
+                  variant="secondary"
+                  icon={<FolderOpen size={14} aria-hidden="true" />}
+                  onClick={browseForLocation}
+                  type="button"
+                >
+                  {t("common.browse")}
+                </Button>
+              }
+              onChange={(event) => setLocation(event.target.value)}
+            />
             {targetPreview && (
               <p className={styles.preview}>
-                将创建：<code>{targetPreview}</code>
+                {t("addProject.targetPreview")}
+                <code>{targetPreview}</code>
               </p>
             )}
           </>
         ) : (
           <>
-            <div className={styles.pickerRow}>
-              <TextField
-                label="目录路径"
-                placeholder="选择要导入的本地目录"
-                value={importPath}
-                required
-                error={errors.path}
-                onChange={(event) => setImportPath(event.target.value)}
-              />
-              <Button
-                variant="secondary"
-                icon={<FolderOpen size={14} aria-hidden="true" />}
-                onClick={browseForImport}
-                type="button"
-              >
-                浏览…
-              </Button>
-            </div>
             <TextField
-              label="项目名称（可选）"
-              placeholder="留空则使用目录名"
+              label={t("addProject.importPathLabel")}
+              placeholder={t("addProject.importPathPlaceholder")}
+              value={importPath}
+              required
+              error={errors.path}
+              trailing={
+                <Button
+                  variant="secondary"
+                  icon={<FolderOpen size={14} aria-hidden="true" />}
+                  onClick={browseForImport}
+                  type="button"
+                >
+                  {t("common.browse")}
+                </Button>
+              }
+              onChange={(event) => setImportPath(event.target.value)}
+            />
+            <TextField
+              label={t("addProject.importNameLabel")}
+              placeholder={t("addProject.importNamePlaceholder")}
               value={importName}
               onChange={(event) => setImportName(event.target.value)}
             />

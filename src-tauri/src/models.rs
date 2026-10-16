@@ -39,12 +39,16 @@ pub struct ImportProjectInput {
 pub struct AppSettings {
     pub default_project_folder: Option<String>,
     pub theme: Option<String>,
-    /// 启动时是否显示最近的工作上下文。默认关闭（由前端按安全默认值处理）。
+    /// 启动后是否在概览页显示最近的工作上下文。默认为 true（缺失即视为开启），
+    /// 关闭时显式存为 "0"。仅控制展示，不会自动启动任何外部程序。
     #[serde(default)]
     pub show_last_context_on_startup: bool,
     /// 启动时是否自动恢复上次的工作环境。默认为 false，只有用户明确开启才执行。
     #[serde(default)]
     pub auto_restore_last_context: bool,
+    /// 界面语言（BCP-47，如 zh-CN / en-US）。未设置时由前端回退到默认语言。
+    #[serde(default)]
+    pub language: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

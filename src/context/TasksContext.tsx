@@ -6,9 +6,10 @@ import type {
   TaskStats,
   TaskStatus,
 } from "../types/domain";
+import { t } from "../i18n/translate";
 import { toErrorMessage } from "../services/backend";
 import * as tasksService from "../services/tasks";
-import { useActivity } from "./ActivityContext";
+import { useRevision } from "./RevisionContext";
 
 const EMPTY_STATS: TaskStats = { todo: 0, inProgress: 0, done: 0, total: 0 };
 
@@ -26,7 +27,7 @@ export interface TaskList {
  * 因此任务的新增、编辑、状态切换都会实时反映到所有列表。
  */
 export function useTaskList(query: TaskQuery = {}): TaskList {
-  const { revision, desktopAvailable } = useActivity();
+  const { revision, desktopAvailable } = useRevision();
   // 序列化后作为稳定依赖，避免对象字面量导致每次渲染都重新拉取。
   const key = JSON.stringify(query);
 
@@ -55,7 +56,7 @@ export function useTaskList(query: TaskQuery = {}): TaskList {
       if (requestId !== requestIdRef.current) {
         return;
       }
-      setError(toErrorMessage(cause, "读取任务列表失败。"));
+      setError(toErrorMessage(cause, t("error.readTasks")));
     } finally {
       if (requestId === requestIdRef.current) {
         setLoading(false);
@@ -72,7 +73,7 @@ export function useTaskList(query: TaskQuery = {}): TaskList {
 
 /** 订阅全局任务统计（按状态计数）。 */
 export function useTaskStats(): TaskStats {
-  const { revision, desktopAvailable } = useActivity();
+  const { revision, desktopAvailable } = useRevision();
   const [stats, setStats] = useState<TaskStats>(EMPTY_STATS);
   const requestIdRef = useRef(0);
 
@@ -111,7 +112,7 @@ export interface TaskActions {
  * 任务变更操作。成功后自增全局版本号，驱动列表与统计自动刷新。
  */
 export function useTaskActions(): TaskActions {
-  const { bumpRevision } = useActivity();
+  const { bumpRevision } = useRevision();
 
   const run = useCallback(
     async <T,>(action: () => Promise<T>): Promise<T> => {

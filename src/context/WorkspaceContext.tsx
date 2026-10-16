@@ -13,13 +13,14 @@ import type {
   WorkspaceSession,
   WorkspaceSessionInput,
 } from "../types/domain";
+import { t } from "../i18n/translate";
 import {
   isDesktopRuntime,
-  NOT_DESKTOP_MESSAGE,
+  notDesktopMessage,
   toErrorMessage,
 } from "../services/backend";
 import * as workspaceService from "../services/workspace";
-import { useActivity } from "./ActivityContext";
+import { useRevision } from "./RevisionContext";
 import { useApp } from "./AppContext";
 
 type AutoRestoreState = "idle" | "running" | "success" | "failed";
@@ -63,7 +64,7 @@ const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
  */
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const desktopAvailable = isDesktopRuntime();
-  const { bumpRevision } = useActivity();
+  const { bumpRevision } = useRevision();
   const { settingsLoaded, autoRestoreLastContext } = useApp();
 
   const [sessions, setSessions] = useState<WorkspaceSession[]>([]);
@@ -86,7 +87,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setSessions(result);
       setError(null);
     } catch (cause) {
-      setError(toErrorMessage(cause, "读取工作上下文失败。"));
+      setError(toErrorMessage(cause, t("error.readWorkspace")));
     } finally {
       setLoading(false);
     }
@@ -101,13 +102,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const mutate = useCallback(
     async <T,>(action: () => Promise<T>): Promise<T> => {
       if (!desktopAvailable) {
-        throw new Error(NOT_DESKTOP_MESSAGE);
+        throw new Error(notDesktopMessage());
       }
       try {
         const result = await action();
         setError(null);
         await load();
-        // 后端会为增删改与恢复操作写入活动记录，这里驱动相关视图刷新。
+        // 增删改与恢复操作成功后自增版本号，驱动相关视图刷新。
         bumpRevision();
         return result;
       } catch (cause) {
@@ -134,20 +135,24 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return;
     }
     const target = lastSession;
-    const name = target.label ?? target.projectName ?? "最近的工作上下文";
+    const name =
+      target.label ?? target.projectName ?? t("workspace.autoRestore.fallbackName");
     setAutoRestore({ state: "running", message: null });
     void (async () => {
       try {
         await restoreSession(target.id);
         setAutoRestore({
           state: "success",
-          message: `已自动恢复「${name}」。`,
+          message: t("workspace.autoRestore.success", { name }),
         });
       } catch (cause) {
         // 自动恢复失败时退回正常界面，不影响应用使用。
         setAutoRestore({
           state: "failed",
-          message: toErrorMessage(cause, `自动恢复「${name}」失败。`),
+          message: toErrorMessage(
+            cause,
+            t("workspace.autoRestore.failed", { name }),
+          ),
         });
       }
     })();

@@ -1,5 +1,6 @@
 import { Search, X } from "lucide-react";
 import { useId } from "react";
+import { t } from "../../i18n/translate";
 import styles from "./SearchInput.module.css";
 
 interface SearchInputProps {
@@ -14,8 +15,8 @@ interface SearchInputProps {
 export function SearchInput({
   value,
   onChange,
-  placeholder = "搜索…",
-  label = "搜索",
+  placeholder = t("ui.searchPlaceholder"),
+  label = t("ui.search"),
 }: SearchInputProps) {
   const id = useId();
 
@@ -37,8 +38,8 @@ export function SearchInput({
         <button
           type="button"
           className={styles.clear}
-          aria-label="清除搜索"
-          title="清除搜索"
+          aria-label={t("ui.clearSearch")}
+          title={t("ui.clearSearch")}
           onClick={() => onChange("")}
         >
           <X size={14} aria-hidden="true" />

@@ -98,6 +98,8 @@ pub trait Detector: Send + Sync {
     fn file_exists(&self, path: &Path) -> Result<bool, DetectError>;
     fn resolve_command(&self, name: &str) -> Option<PathBuf>;
     fn registry_installs(&self, keywords: &[&str]) -> Vec<RegistryInstall>;
+    /// 读取注册表 `App Paths` 中某个可执行文件名登记的真实路径（精确匹配）。
+    fn app_path(&self, exe_name: &str) -> Option<PathBuf>;
     fn query_version(&self, executable: &Path, args: &[&str]) -> VersionOutcome;
 }
 
@@ -180,6 +182,10 @@ impl Detector for SystemDetector {
 
     fn registry_installs(&self, keywords: &[&str]) -> Vec<RegistryInstall> {
         system_registry_installs(keywords)
+    }
+
+    fn app_path(&self, exe_name: &str) -> Option<PathBuf> {
+        system_app_path(exe_name)
     }
 
     fn query_version(&self, executable: &Path, args: &[&str]) -> VersionOutcome {
@@ -331,6 +337,66 @@ fn system_registry_installs(_keywords: &[&str]) -> Vec<RegistryInstall> {
     Vec::new()
 }
 
+/// 从注册表 `App Paths` 读取指定可执行文件名登记的真实路径。
+///
+/// 只做精确文件名匹配，不枚举、不模糊搜索；缺失或权限不足时返回 `None`，
+/// 交由其它检测方式继续，绝不因此判定为「未安装」。
+#[cfg(windows)]
+fn system_app_path(exe_name: &str) -> Option<PathBuf> {
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+    use winreg::RegKey;
+
+    let name = exe_name.trim();
+    if name.is_empty() {
+        return None;
+    }
+
+    let roots = [
+        (
+            HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\App Paths",
+        ),
+        (
+            HKEY_CURRENT_USER,
+            r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\App Paths",
+        ),
+        (
+            HKEY_LOCAL_MACHINE,
+            r"Software\Microsoft\Windows\CurrentVersion\App Paths",
+        ),
+        (
+            HKEY_LOCAL_MACHINE,
+            r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\App Paths",
+        ),
+    ];
+
+    for (hive, subkey) in roots {
+        let root = RegKey::predef(hive);
+        let Ok(key) = root.open_subkey(subkey) else {
+            continue;
+        };
+        let Ok(entry) = key.open_subkey(name) else {
+            continue;
+        };
+        // 默认值即登记的可执行文件路径（可能带引号或 `%VAR%`）。
+        let Ok(raw) = entry.get_value::<String, _>("") else {
+            continue;
+        };
+        if let Some(cleaned) = clean_icon_path(&raw) {
+            if !cleaned.is_empty() {
+                return Some(PathBuf::from(cleaned));
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(not(windows))]
+fn system_app_path(_exe_name: &str) -> Option<PathBuf> {
+    None
+}
+
 /// 对单个内置定义执行检测。
 pub fn detect_definition(
     definition: &ToolDefinition,
@@ -356,6 +422,20 @@ pub fn detect_definition(
                 return Ok(Some(build_found(
                     path,
                     "候选安装路径".to_string(),
+                    definition,
+                    detector,
+                )));
+            }
+        }
+    }
+
+    // 注册表 App Paths：覆盖安装目录由用户自选、不在候选路径中的情况。
+    for exe_name in definition.app_paths {
+        if let Some(path) = detector.app_path(exe_name) {
+            if detector.file_exists(&path)? {
+                return Ok(Some(build_found(
+                    path,
+                    format!("App Paths 注册表项（{exe_name}）"),
                     definition,
                     detector,
                 )));

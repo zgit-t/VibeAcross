@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { t } from "../i18n/translate";
 import { getAppInfo, greet, isDesktopRuntime } from "../services/backend";
 import type { AppInfo } from "../types/backend";
 
@@ -31,7 +32,7 @@ export function useBackendInfo() {
         ...prev,
         isDesktop: false,
         loading: false,
-        error: "当前运行在浏览器预览模式，未连接到 Rust 后端。",
+        error: t("greeting.browserNoBackend"),
       }));
       return;
     }
@@ -62,7 +63,7 @@ export function useBackendInfo() {
   const requestGreeting = useCallback(async (name: string) => {
     const trimmed = name.trim();
     if (!trimmed) {
-      throw new Error("请输入名称后再向 Rust 后端发送请求。");
+      throw new Error(t("greeting.emptyName"));
     }
     return greet(trimmed);
   }, []);

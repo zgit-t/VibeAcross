@@ -141,7 +141,7 @@ pub struct TaskStats {
 const SELECT_COLUMNS: &str = "id, project_id, title, description, status, priority, due_date, \
      created_at, updated_at, completed_at";
 
-fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
+pub(crate) fn row_to_task(row: &rusqlite::Row<'_>) -> rusqlite::Result<Task> {
     Ok(Task {
         id: row.get("id")?,
         project_id: row.get("project_id")?,
@@ -297,7 +297,7 @@ pub fn update_task(conn: &Connection, id: &str, input: TaskInput) -> Result<Task
 
 /// 切换任务状态。完成时写入 `completed_at`，重新打开时清空。
 ///
-/// 状态未变化时不做改动，避免产生无意义的更新时间与活动记录。
+/// 状态未变化时不做改动，避免产生无意义的更新时间。
 pub fn set_task_status(
     conn: &Connection,
     id: &str,
@@ -339,7 +339,7 @@ pub fn delete_task(conn: &Connection, id: &str) -> Result<(), AppError> {
 }
 
 /// 转义 LIKE 通配符，按字面量匹配搜索词。
-fn escape_like(term: &str) -> String {
+pub(crate) fn escape_like(term: &str) -> String {
     term.replace('\\', "\\\\")
         .replace('%', "\\%")
         .replace('_', "\\_")

@@ -1,6 +1,8 @@
 import { useApp } from "../context/AppContext";
-import { APP_DESCRIPTION, APP_NAME, APP_STACK, APP_VERSION } from "../config/app";
+import { APP_NAME, APP_STACK, APP_VERSION } from "../config/app";
+import logo from "../assets/logo.png";
 import { useBackendInfo } from "../hooks/useBackendInfo";
+import { useI18n } from "../i18n";
 import { Modal } from "./ui/Modal";
 import { Button } from "./ui/Button";
 import { GreetingDemo } from "./GreetingDemo";
@@ -9,46 +11,61 @@ import styles from "./AboutDialog.module.css";
 /** 关于 VibeAcross：展示产品信息、技术栈，并保留第一阶段的后端通信示例。 */
 export function AboutDialog() {
   const { aboutOpen, closeAbout } = useApp();
+  const { t } = useI18n();
   const { isDesktop, appInfo, error, requestGreeting } = useBackendInfo();
 
   return (
     <Modal
       open={aboutOpen}
       onClose={closeAbout}
-      title={`关于 ${APP_NAME}`}
+      title={t("about.title", { name: APP_NAME })}
       size="md"
       footer={
         <Button variant="secondary" onClick={closeAbout}>
-          关闭
+          {t("common.close")}
         </Button>
       }
     >
       <div className={styles.content}>
         <div className={styles.identity}>
-          <span className={styles.mark} aria-hidden="true">
-            VA
-          </span>
+          <img
+            className={styles.mark}
+            src={logo}
+            alt=""
+            aria-hidden="true"
+            draggable={false}
+          />
           <div>
             <p className={styles.name}>{APP_NAME}</p>
-            <p className={styles.version}>版本 {APP_VERSION}</p>
+            <p className={styles.version}>
+              {t("about.version", { version: APP_VERSION })}
+            </p>
           </div>
         </div>
 
-        <p className={styles.description}>{APP_DESCRIPTION}</p>
+        <p className={styles.description}>{t("app.description")}</p>
 
         <dl className={styles.meta}>
           <div className={styles.metaRow}>
-            <dt>运行环境</dt>
-            <dd>{isDesktop ? "Tauri 桌面窗口" : "浏览器预览（未连接后端）"}</dd>
+            <dt>{t("about.runtime")}</dt>
+            <dd>
+              {isDesktop
+                ? t("about.desktopRuntime")
+                : t("about.browserPreview")}
+            </dd>
           </div>
           <div className={styles.metaRow}>
-            <dt>后端版本</dt>
-            <dd>{appInfo ? `${appInfo.name} ${appInfo.version}` : "未连接"}</dd>
+            <dt>{t("about.backendVersion")}</dt>
+            <dd>
+              {appInfo
+                ? `${appInfo.name} ${appInfo.version}`
+                : t("about.notConnected")}
+            </dd>
           </div>
         </dl>
 
         <div className={styles.stackBlock}>
-          <p className={styles.stackTitle}>技术栈</p>
+          <p className={styles.stackTitle}>{t("about.stack")}</p>
           <ul className={styles.stackList}>
             {APP_STACK.map((item) => (
               <li key={item}>{item}</li>
@@ -56,9 +73,7 @@ export function AboutDialog() {
           </ul>
         </div>
 
-        <p className={styles.license}>
-          开源许可信息将在后续阶段随依赖清单一并提供，当前不做声明。
-        </p>
+        <p className={styles.license}>{t("about.license")}</p>
 
         {error && <p className={styles.error}>{error}</p>}
 

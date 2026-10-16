@@ -3,14 +3,17 @@
 //! 设计要点：
 //!  - 前端只能提交「项目 id + 工具安装 id」，绝不能传入任意命令或参数。
 //!  - 启动前重新校验项目目录与工具可执行文件的有效性。
-//!  - 只使用标准库的进程 API，不拼接 shell 字符串、不经过 `cmd.exe`/PowerShell。
+//!  - 只使用标准库的进程 API：`.exe` 直接创建进程；`.cmd`/`.bat` 仅经受控的
+//!    Windows 命令解释器启动（结构化引用，不拼接原始 shell 字符串）。
 //!  - 通过 [`ProcessLauncher`] 抽象进程创建，测试可注入记录型实现而不真正启动进程。
 
 use crate::error::AppError;
 use crate::models::Project;
 use crate::projects;
 use crate::tools::detect::Detector;
-use crate::tools::model::{LaunchMethod, LaunchSupport};
+use crate::tools::model::{
+    command_script_unsafe_char, is_command_script, LaunchMethod, LaunchSupport,
+};
 use crate::tools::service as tools;
 use rusqlite::{params, Connection};
 use serde::Serialize;
@@ -34,6 +37,18 @@ pub enum LaunchMode {
     Console,
 }
 
+/// 受控启动的目标类型。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LaunchTarget {
+    /// 直接创建可执行文件进程（`.exe` 等）。
+    Direct,
+    /// 经指定的 Windows 命令解释器启动 `.cmd` / `.bat` 脚本。
+    ///
+    /// cmd.exe 不按 CRT 规则解析引号，因此脚本路径与参数必须走独立的安全
+    /// 构造逻辑（见 [`command_script_argv`]），绝不交给标准库转义或拼接 shell 字符串。
+    CommandScript { interpreter: PathBuf },
+}
+
 /// 一次受控启动的完整描述。
 #[derive(Debug, Clone)]
 pub struct LaunchSpec {
@@ -41,6 +56,7 @@ pub struct LaunchSpec {
     pub args: Vec<String>,
     pub working_dir: PathBuf,
     pub mode: LaunchMode,
+    pub target: LaunchTarget,
 }
 
 /// 进程创建失败。
@@ -79,10 +95,92 @@ impl SystemLauncher {
     }
 }
 
+/// 定位 Windows 命令解释器：优先使用 `%ComSpec%`，否则回退到系统默认路径。
+pub fn windows_command_interpreter() -> PathBuf {
+    if let Some(value) = std::env::var_os("ComSpec") {
+        if !value.is_empty() {
+            return PathBuf::from(value);
+        }
+    }
+    #[cfg(windows)]
+    {
+        PathBuf::from(r"C:\Windows\System32\cmd.exe")
+    }
+    #[cfg(not(windows))]
+    {
+        PathBuf::from("cmd.exe")
+    }
+}
+
+/// 用双引号包裹单个 cmd token；包含无法安全转义的字符时拒绝。
+fn quote_cmd_token(raw: &str) -> Result<String, LaunchError> {
+    if raw.is_empty() {
+        return Err(LaunchError::new("脚本路径或参数为空，无法安全启动。"));
+    }
+    if let Some(bad) = command_script_unsafe_char(raw) {
+        return Err(LaunchError::new(format!(
+            "路径或参数包含无法安全转义的字符「{bad}」，已拒绝经命令解释器启动。"
+        )));
+    }
+    Ok(format!("\"{raw}\""))
+}
+
+/// 为 `.cmd` / `.bat` 构造经 Windows 命令解释器启动的参数列表。
+///
+/// 返回 `["/d", "/v:off", "/s", "/c", <命令字符串>]`：
+/// - `/d` 忽略 AutoRun 注册表项；`/v:off` 关闭延迟展开，使 `!` 失去特殊含义；
+/// - `/s` 让 cmd 去掉命令字符串首尾的引号，因此整条命令再包一层引号；
+/// - 每个 token 用双引号包裹并拒绝无法安全转义的字符，正确处理空格与
+///   `& | < > ^` 等 cmd 元字符。
+///
+/// 该函数不接收任何未经验证的原始命令行，只对结构化的路径与参数做引用。
+pub fn command_script_argv(script: &Path, args: &[String]) -> Result<Vec<String>, LaunchError> {
+    let script = script
+        .to_str()
+        .ok_or_else(|| LaunchError::new("脚本路径不是有效的 Unicode 字符串。"))?;
+    let mut tokens = Vec::with_capacity(args.len() + 1);
+    tokens.push(quote_cmd_token(script)?);
+    for arg in args {
+        tokens.push(quote_cmd_token(arg)?);
+    }
+    let command = format!("\"{}\"", tokens.join(" "));
+    Ok(vec![
+        "/d".to_string(),
+        "/v:off".to_string(),
+        "/s".to_string(),
+        "/c".to_string(),
+        command,
+    ])
+}
+
 impl ProcessLauncher for SystemLauncher {
     fn launch(&self, spec: &LaunchSpec) -> Result<u32, LaunchError> {
-        let mut command = Command::new(&spec.executable);
-        command.args(&spec.args);
+        let mut command = match &spec.target {
+            LaunchTarget::Direct => {
+                let mut command = Command::new(&spec.executable);
+                command.args(&spec.args);
+                command
+            }
+            LaunchTarget::CommandScript { interpreter } => {
+                let argv = command_script_argv(&spec.executable, &spec.args)?;
+                let mut command = Command::new(interpreter);
+                #[cfg(windows)]
+                {
+                    use std::os::windows::process::CommandExt;
+                    // 命令字符串必须**原样**追加：cmd.exe 不按 CRT 规则解析引号，
+                    // 若交由标准库转义会破坏 `.cmd` 的引用语义、甚至造成注入。
+                    for item in &argv {
+                        command.raw_arg(item);
+                    }
+                }
+                #[cfg(not(windows))]
+                {
+                    command.args(&argv);
+                }
+                command
+            }
+        };
+
         command.current_dir(&spec.working_dir);
 
         match spec.mode {
@@ -100,7 +198,7 @@ impl ProcessLauncher for SystemLauncher {
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
-            // 不经过 shell，仅通过进程创建标志控制窗口行为。
+            // 不经过 shell 文本拼接，仅通过进程创建标志控制窗口行为。
             const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
             let flags = match spec.mode {
@@ -164,6 +262,12 @@ pub struct LaunchResult {
     pub method: LaunchMethod,
     pub working_dir: String,
     pub arguments: Vec<String>,
+    /// 本次启动是否同时在目标工具中创建 / 恢复了任务或会话上下文。
+    ///
+    /// 当前版本不向工具传递任何会话或上下文参数，因此恒为 `false`；
+    /// 界面据此如实告知用户需在工具内手动继续，避免把「进程已创建」误当作
+    /// 「任务已初始化」。
+    pub context_initialized: bool,
 }
 
 /// 为项目设置默认开发工具；`tool_id` 为 None 时清除关联。
@@ -316,6 +420,26 @@ pub fn launch(
         LaunchMethod::WorkingDirectory => (Vec::new(), LaunchMode::Console),
     };
 
+    // `.cmd` / `.bat` 无法直接创建进程，必须经 Windows 命令解释器启动。
+    let target = if is_command_script(&executable_path) {
+        // 防御性校验：即使配置阶段已检查，启动前仍拒绝无法安全转义的路径 / 参数。
+        let unsafe_char = command_script_unsafe_char(&executable)
+            .or_else(|| args.iter().find_map(|arg| command_script_unsafe_char(arg)));
+        if let Some(bad) = unsafe_char {
+            return Err(AppError::new(
+                "LAUNCH_UNSAFE_PATH",
+                format!(
+                    "路径或参数包含无法安全转义的字符「{bad}」，出于安全考虑已拒绝经命令解释器启动；请改用 .exe 形式或调整安装路径。"
+                ),
+            ));
+        }
+        LaunchTarget::CommandScript {
+            interpreter: windows_command_interpreter(),
+        }
+    } else {
+        LaunchTarget::Direct
+    };
+
     let key = format!("{project_id}:{target_id}");
     if !guard.allow(&key) {
         return Err(AppError::new(
@@ -329,6 +453,7 @@ pub fn launch(
         args: args.clone(),
         working_dir: project_dir.to_path_buf(),
         mode,
+        target,
     };
 
     let pid = match launcher.launch(&spec) {
@@ -353,5 +478,46 @@ pub fn launch(
         method,
         working_dir: project.path.clone(),
         arguments: args,
+        // 当前版本只创建进程并定位工作目录，不注入任何会话 / 上下文参数。
+        context_initialized: false,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| value.to_string()).collect()
+    }
+
+    #[test]
+    fn command_script_argv_quotes_script_with_spaces() {
+        let argv = command_script_argv(Path::new(r"C:\Program Files\npm\claude.cmd"), &[]).unwrap();
+        assert_eq!(argv[0], "/d");
+        assert_eq!(argv[1], "/v:off");
+        assert_eq!(argv[2], "/s");
+        assert_eq!(argv[3], "/c");
+        // `/s` 会去掉首尾引号，因此整条命令再包一层引号。
+        assert_eq!(argv[4], "\"\"C:\\Program Files\\npm\\claude.cmd\"\"");
+    }
+
+    #[test]
+    fn command_script_argv_quotes_each_argument() {
+        let argv =
+            command_script_argv(Path::new(r"C:\tools\x.cmd"), &args(&[r"C:\my project"])).unwrap();
+        assert_eq!(argv[4], "\"\"C:\\tools\\x.cmd\" \"C:\\my project\"\"");
+    }
+
+    #[test]
+    fn command_script_argv_rejects_unsafe_tokens() {
+        assert!(command_script_argv(Path::new(r"C:\a%b\tool.cmd"), &[]).is_err());
+        assert!(command_script_argv(Path::new(r#"C:\a"b\tool.cmd"#), &[]).is_err());
+        assert!(command_script_argv(Path::new(r"C:\tools\x.cmd"), &args(&["%"])).is_err());
+    }
+
+    #[test]
+    fn command_script_argv_rejects_empty_argument() {
+        assert!(command_script_argv(Path::new(r"C:\tools\x.cmd"), &args(&[""])).is_err());
+    }
 }

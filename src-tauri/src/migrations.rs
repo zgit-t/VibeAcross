@@ -20,7 +20,16 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0005_workspace_sessions",
         include_str!("../migrations/0005_workspace_sessions.sql"),
     ),
+    (
+        "0006_drop_activity",
+        include_str!("../migrations/0006_drop_activity.sql"),
+    ),
 ];
+
+/// 当前应用支持的最新数据库版本（等于已登记迁移的数量）。
+pub fn latest_version() -> i64 {
+    MIGRATIONS.len() as i64
+}
 
 /// 将数据库升级到最新版本。已应用过的迁移会被跳过，不会破坏已有数据。
 pub fn run(conn: &Connection) -> Result<(), AppError> {

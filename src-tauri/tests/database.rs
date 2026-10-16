@@ -3,6 +3,7 @@ use tempfile::TempDir;
 use vibeacross_lib::db::Database;
 use vibeacross_lib::migrations;
 use vibeacross_lib::models::AppSettings;
+use vibeacross_lib::tasks::{self, TaskInput, TaskPriority};
 use vibeacross_lib::{projects, settings};
 
 fn temp_dir() -> TempDir {
@@ -17,7 +18,7 @@ fn migrations_apply_and_are_idempotent() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 5);
+    assert_eq!(version, 6);
 
     // 再次执行迁移不应报错，也不应重复建表。
     migrations::run(&conn).unwrap();
@@ -27,7 +28,6 @@ fn migrations_apply_and_are_idempotent() {
         "app_settings",
         "tool_installations",
         "tasks",
-        "activity_logs",
         "workspace_sessions",
     ] {
         let count: i64 = conn
@@ -50,8 +50,8 @@ fn migrations_apply_and_are_idempotent() {
         .unwrap();
     assert_eq!(has_column, 1, "projects 应包含 default_tool_id 列");
 
-    // 版本 4 新增任务与活动记录表；版本 5 新增工作上下文表。
-    for table in ["tasks", "activity_logs", "workspace_sessions"] {
+    // 版本 4 新增任务表；版本 5 新增工作上下文表；版本 6 移除活动表。
+    for table in ["tasks", "workspace_sessions"] {
         let exists: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
@@ -61,6 +61,16 @@ fn migrations_apply_and_are_idempotent() {
             .unwrap();
         assert_eq!(exists, 1, "表 {table} 应存在");
     }
+
+    // 活动记录表已随功能移除，不应残留。
+    let activity_exists: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'activity_logs'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(activity_exists, 0, "activity_logs 表应已被移除");
 }
 
 #[test]
@@ -87,7 +97,7 @@ fn project_tool_migration_preserves_existing_projects() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 5);
+    assert_eq!(version, 6);
 
     // 旧数据保留，且新列默认为 NULL。
     let (name, tool): (String, Option<String>) = conn
@@ -102,7 +112,8 @@ fn project_tool_migration_preserves_existing_projects() {
 #[test]
 fn workspace_migration_preserves_existing_v4_data() {
     // 手工构造一个「版本 4」的数据库：projects 已有 default_tool_id，
-    // 且已存在任务与活动记录，模拟升级到版本 5 前的真实数据。
+    // 且已存在任务与活动记录，模拟升级到最新版本前的真实数据。
+    // 迁移到最新版本时应保留项目 / 任务，并移除仅活动功能使用的活动表。
     let workspace = temp_dir();
     let db_path = workspace.path().join("v4.db");
     let conn = rusqlite::Connection::open(&db_path).unwrap();
@@ -140,9 +151,9 @@ fn workspace_migration_preserves_existing_v4_data() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 5);
+    assert_eq!(version, 6);
 
-    // 升级不破坏既有数据。
+    // 升级不破坏既有项目与任务数据。
     let project: String = conn
         .query_row("SELECT name FROM projects WHERE id = 'p1'", [], |row| row.get(0))
         .unwrap();
@@ -151,10 +162,16 @@ fn workspace_migration_preserves_existing_v4_data() {
         .query_row("SELECT title FROM tasks WHERE id = 't1'", [], |row| row.get(0))
         .unwrap();
     assert_eq!(task, "既有任务");
-    let activity: String = conn
-        .query_row("SELECT summary FROM activity_logs WHERE id = 'a1'", [], |row| row.get(0))
+
+    // 活动记录表已随功能移除，迁移后不再存在。
+    let activity_exists: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'activity_logs'",
+            [],
+            |row| row.get(0),
+        )
         .unwrap();
-    assert_eq!(activity, "创建了项目");
+    assert_eq!(activity_exists, 0, "升级后 activity_logs 表应已被移除");
 
     // 版本 5 的新表创建成功且为空。
     let sessions: i64 = conn
@@ -167,7 +184,7 @@ fn workspace_migration_preserves_existing_v4_data() {
     let again: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(again, 5);
+    assert_eq!(again, 6);
 }
 
 #[test]
@@ -387,8 +404,10 @@ fn settings_roundtrip_and_validation() {
     let initial = settings::get_settings(&conn).unwrap();
     assert!(initial.default_project_folder.is_none());
     assert!(initial.theme.is_none());
-    assert!(!initial.show_last_context_on_startup);
+    // 「显示最近的工作上下文」默认为开启（缺失即 true）。
+    assert!(initial.show_last_context_on_startup);
     assert!(!initial.auto_restore_last_context);
+    assert!(initial.language.is_none());
 
     let folder = workspace.path().to_string_lossy().into_owned();
     let saved = settings::update_settings(
@@ -398,6 +417,7 @@ fn settings_roundtrip_and_validation() {
             theme: Some("dark".into()),
             show_last_context_on_startup: true,
             auto_restore_last_context: true,
+            language: Some("en".into()),
         },
     )
     .unwrap();
@@ -405,6 +425,8 @@ fn settings_roundtrip_and_validation() {
     assert!(saved.default_project_folder.is_some());
     assert!(saved.show_last_context_on_startup);
     assert!(saved.auto_restore_last_context);
+    // 别名应规范化为标准标记。
+    assert_eq!(saved.language.as_deref(), Some("en-US"));
 
     // 主题非法时整体拒绝，且不覆盖已有设置。
     let invalid = settings::update_settings(
@@ -414,6 +436,7 @@ fn settings_roundtrip_and_validation() {
             theme: Some("neon".into()),
             show_last_context_on_startup: false,
             auto_restore_last_context: false,
+            language: None,
         },
     )
     .unwrap_err();
@@ -430,9 +453,89 @@ fn settings_roundtrip_and_validation() {
             theme: None,
             show_last_context_on_startup: false,
             auto_restore_last_context: false,
+            language: None,
         },
     )
     .unwrap();
     assert!(cleared.theme.is_none());
     assert!(cleared.default_project_folder.is_none());
+    assert!(cleared.language.is_none());
+    // 显式关闭会被持久化为 false（而非回落为默认的 true）。
+    assert!(!cleared.show_last_context_on_startup);
+}
+
+#[test]
+fn settings_rejects_invalid_language() {
+    let db = Database::open_in_memory().unwrap();
+    let conn = db.conn().unwrap();
+
+    let invalid = settings::update_settings(
+        &conn,
+        AppSettings {
+            default_project_folder: None,
+            theme: None,
+            show_last_context_on_startup: false,
+            auto_restore_last_context: false,
+            language: Some("fr-FR".into()),
+        },
+    )
+    .unwrap_err();
+    assert_eq!(invalid.code, "SETTING_INVALID_LANGUAGE");
+
+    // 非法值不应写入，语言保持未设置。
+    let unchanged = settings::get_settings(&conn).unwrap();
+    assert!(unchanged.language.is_none());
+}
+
+#[test]
+fn tasks_and_settings_persist_across_reopen() {
+    let data = temp_dir();
+    let db_path = data.path().join("vibeacross.db");
+
+    let (project_id, task_id) = {
+        let db = Database::open(db_path.clone()).unwrap();
+        let conn = db.conn().unwrap();
+        let project =
+            projects::create_project(&conn, "Persist", data.path().to_str().unwrap()).unwrap();
+        let task = tasks::create_task(
+            &conn,
+            TaskInput {
+                project_id: project.id.clone(),
+                title: "持久化任务".to_string(),
+                description: Some("重启后应仍然存在".to_string()),
+                status: None,
+                priority: TaskPriority::High,
+                due_date: Some("2026-12-31".to_string()),
+            },
+        )
+        .unwrap();
+        settings::update_settings(
+            &conn,
+            AppSettings {
+                default_project_folder: None,
+                theme: Some("dark".to_string()),
+                show_last_context_on_startup: true,
+                auto_restore_last_context: true,
+                language: Some("en-US".to_string()),
+            },
+        )
+        .unwrap();
+        (project.id, task.id)
+    };
+
+    // 重新打开数据库（模拟应用重启），数据与关联应完整保留。
+    let db = Database::open(db_path).unwrap();
+    let conn = db.conn().unwrap();
+
+    let reloaded = tasks::get_task(&conn, &task_id).unwrap();
+    assert_eq!(reloaded.project_id, project_id);
+    assert_eq!(reloaded.title, "持久化任务");
+    assert_eq!(reloaded.description.as_deref(), Some("重启后应仍然存在"));
+    assert_eq!(reloaded.priority, TaskPriority::High);
+    assert_eq!(reloaded.due_date.as_deref(), Some("2026-12-31"));
+
+    let loaded = settings::get_settings(&conn).unwrap();
+    assert_eq!(loaded.theme.as_deref(), Some("dark"));
+    assert_eq!(loaded.language.as_deref(), Some("en-US"));
+    assert!(loaded.auto_restore_last_context);
 }

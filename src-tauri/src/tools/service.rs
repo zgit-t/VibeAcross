@@ -3,8 +3,9 @@ use crate::settings::{read_setting, write_setting, KEY_TOOLS_LAST_DETECTION};
 use crate::tools::catalog::{self, LaunchPlan, RestorePlan, SessionResumePlan, ToolDefinition};
 use crate::tools::detect::{detect_definition, Detector, VersionOutcome};
 use crate::tools::model::{
-    LaunchMethod, LaunchSupport, RestoreLevel, SessionResumeSupport, ToolConfigInput, ToolEntry,
-    ToolLaunchInfo, ToolRestoreInfo, ToolState, ToolStatus, ToolType,
+    command_script_unsafe_char, is_command_script, LaunchMethod, LaunchSupport, RestoreLevel,
+    SessionResumeSupport, ToolConfigInput, ToolEntry, ToolLaunchInfo, ToolRestoreInfo, ToolState,
+    ToolStatus, ToolType,
 };
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
@@ -202,11 +203,30 @@ fn launch_info(
             method: None,
             reason: "缺少可执行文件路径，请在 Tools 页面补充配置。".to_string(),
         },
-        Some(executable) if is_script(executable) => ToolLaunchInfo {
-            support: LaunchSupport::NeedsConfiguration,
-            method: None,
-            reason: "该安装为脚本（.cmd/.bat），需要 shell 中间层；出于安全考虑不支持受控启动，请配置 .exe 形式。".to_string(),
-        },
+        Some(executable) if is_command_script(Path::new(executable)) => {
+            match command_script_unsafe_char(executable) {
+                // 路径无法安全转义时不谎报可启动，转为可操作的补充配置提示。
+                Some(bad) => ToolLaunchInfo {
+                    support: LaunchSupport::NeedsConfiguration,
+                    method: None,
+                    reason: format!(
+                        "该安装为脚本（.cmd/.bat），但路径包含无法安全转义的字符「{bad}」，不能经命令解释器启动；请改用 .exe 形式或调整安装路径。"
+                    ),
+                },
+                None => ToolLaunchInfo {
+                    support: LaunchSupport::Supported,
+                    method: Some(method),
+                    reason: match method {
+                        LaunchMethod::FolderArgument => {
+                            "将以项目目录作为参数，通过 Windows 命令解释器启动该脚本。".to_string()
+                        }
+                        LaunchMethod::WorkingDirectory => {
+                            "将在项目目录中，通过 Windows 命令解释器打开该命令行脚本。".to_string()
+                        }
+                    },
+                },
+            }
+        }
         Some(_) => ToolLaunchInfo {
             support: LaunchSupport::Supported,
             method: Some(method),
@@ -282,18 +302,6 @@ fn restore_info(
         session,
         session_reason,
     }
-}
-
-/// 判断路径是否为需要 shell 才能执行的脚本。
-fn is_script(path: &str) -> bool {
-    matches!(
-        Path::new(path)
-            .extension()
-            .and_then(|value| value.to_str())
-            .map(|value| value.to_ascii_lowercase())
-            .as_deref(),
-        Some("cmd") | Some("bat")
-    )
 }
 
 fn order_key(entry: &ToolEntry) -> (usize, bool) {
@@ -1034,21 +1042,35 @@ pub fn detect_tools(
     tool_state(conn, detector)
 }
 
+/// 仅对一条已保存的配置重新校验其可执行文件 / 命令，不触发全量自动检测。
+///
+/// 因此不会因为路径来源变化而产生重复条目，用于「手动添加但路径失效」的
+/// 重新验证操作。
+pub fn revalidate_tool(
+    conn: &Connection,
+    detector: &dyn Detector,
+    id: &str,
+) -> Result<ToolState, AppError> {
+    let row = load_installs(conn)?
+        .into_iter()
+        .find(|row| row.id == id)
+        .ok_or_else(|| AppError::new("TOOL_NOT_FOUND", "未找到该工具配置。"))?;
+
+    if row.executable_path.is_none() && row.command_name.is_none() {
+        return Err(AppError::new(
+            "TOOL_CONFIG_REQUIRED",
+            "该工具尚未配置可执行文件路径或命令名称。",
+        ));
+    }
+
+    let definition = catalog::find(&row.tool_id);
+    revalidate_row(conn, detector, &row, definition)?;
+    tool_state(conn, detector)
+}
+
 /// 解析命令名（用于前端预览）到实际可执行文件路径。
 pub fn resolve_command(detector: &dyn Detector, command: &str) -> Option<String> {
     detector
         .resolve_command(command.trim())
         .map(|path| clean_path(&path.to_string_lossy()))
-}
-
-/// 读取一条工具安装配置的显示名称（供活动记录等使用）。
-pub fn install_name(conn: &Connection, id: &str) -> Option<String> {
-    conn.query_row(
-        "SELECT name FROM tool_installations WHERE id = ?1",
-        [id],
-        |row| row.get(0),
-    )
-    .optional()
-    .ok()
-    .flatten()
 }

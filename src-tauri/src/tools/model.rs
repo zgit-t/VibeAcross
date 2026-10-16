@@ -1,4 +1,31 @@
 use serde::{Deserialize, Serialize};
+use std::path::Path;
+
+/// 判断路径是否为需要 Windows 命令解释器执行的脚本（`.cmd` / `.bat`）。
+///
+/// npm 在 Windows 上安装的 CLI 工具通常只有 `.cmd` 启动入口（而非 `.exe`），
+/// 因此这类路径必须能被识别并走受控的命令解释器启动，而不是直接当作可执行文件。
+pub fn is_command_script(path: &Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|value| value.to_str())
+            .map(|value| value.to_ascii_lowercase())
+            .as_deref(),
+        Some("cmd") | Some("bat")
+    )
+}
+
+/// 经 Windows 命令解释器启动时无法安全转义、必须拒绝的字符。
+///
+/// 我们在 `cmd.exe /d /v:off /s /c` 下用双引号包裹每个 token：引号内
+/// `& | < > ^ ( )` 等失去特殊含义，`!` 因 `/v:off` 关闭延迟展开而安全；但
+/// `"`（破坏引用边界）、`%`（环境变量展开，无法在命令行层转义）、回车换行与
+/// NUL 无法安全处理，必须拒绝并在界面上给出可理解的替代说明。
+pub fn command_script_unsafe_char(value: &str) -> Option<char> {
+    value
+        .chars()
+        .find(|c| matches!(c, '"' | '%' | '\r' | '\n' | '\0'))
+}
 
 /// 工具类型：桌面应用或命令行工具。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

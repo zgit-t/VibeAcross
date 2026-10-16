@@ -122,3 +122,35 @@
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
 }
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.healthGrid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.healthRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.healthKey {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.pathActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}

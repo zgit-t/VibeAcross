@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
+import { useI18n } from "../i18n";
 import styles from "./GreetingDemo.module.css";
 
 interface GreetingDemoProps {
@@ -14,6 +15,7 @@ interface GreetingDemoProps {
  * 用于验证 Tauri IPC 通道是否正常工作。
  */
 export function GreetingDemo({ onGreet, enabled }: GreetingDemoProps) {
+  const { t } = useI18n();
   const [name, setName] = useState("");
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -36,29 +38,32 @@ export function GreetingDemo({ onGreet, enabled }: GreetingDemoProps) {
 
   return (
     <section className={styles.demo}>
-      <h2 className={styles.title}>后端通信示例</h2>
+      <h2 className={styles.title}>{t("greeting.title")}</h2>
       <p className={styles.hint}>
-        输入名称并发送，请求将由 Rust 后端的 <code>greet</code> 命令处理。
+        {t("greeting.hintBefore")} <code>{t("greeting.hintCode")}</code>{" "}
+        {t("greeting.hintAfter")}
       </p>
       <form className={styles.form} onSubmit={handleSubmit}>
         <input
           className={styles.input}
           type="text"
           value={name}
-          placeholder="输入你的名字"
+          placeholder={t("greeting.placeholder")}
           onChange={(event) => setName(event.target.value)}
           disabled={!enabled || pending}
         />
         <button className={styles.button} type="submit" disabled={!enabled || pending}>
-          {pending ? "发送中…" : "发送到 Rust"}
+          {pending ? t("greeting.sending") : t("greeting.send")}
         </button>
       </form>
 
-      {!enabled && (
-        <p className={styles.offline}>当前未连接桌面后端，请在 Tauri 窗口中运行。</p>
-      )}
+      {!enabled && <p className={styles.offline}>{t("greeting.offline")}</p>}
       {result && <p className={styles.result}>{result}</p>}
-      {error && <p className={styles.error}>调用失败：{error}</p>}
+      {error && (
+        <p className={styles.error}>
+          {t("greeting.failure", { message: error })}
+        </p>
+      )}
     </section>
   );
 }

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { t } from "../../i18n/translate";
 import { Button } from "./Button";
 import { Modal } from "./Modal";
 
@@ -20,8 +21,8 @@ export function ConfirmDialog({
   open,
   title,
   description,
-  confirmLabel = "确认",
-  cancelLabel = "取消",
+  confirmLabel = t("common.confirm"),
+  cancelLabel = t("common.cancel"),
   tone = "primary",
   busy = false,
   onConfirm,
@@ -45,7 +46,7 @@ export function ConfirmDialog({
             onClick={onConfirm}
             disabled={busy}
           >
-            {busy ? "处理中…" : confirmLabel}
+            {busy ? t("common.processing") : confirmLabel}
           </Button>
         </>
       }

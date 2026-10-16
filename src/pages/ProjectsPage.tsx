@@ -1,7 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FolderPlus, Plus, RefreshCw, SearchX } from "lucide-react";
+import { useApp } from "../context/AppContext";
 import { useProjects } from "../context/ProjectsContext";
 import { useTools } from "../context/ToolsContext";
+import { useI18n } from "../i18n";
 import { PageHeader } from "../components/layout/PageHeader";
 import { Button } from "../components/ui/Button";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
@@ -13,15 +15,12 @@ import { Switch } from "../components/ui/Switch";
 import { ProjectList } from "../features/projects/ProjectList";
 import { AddProjectDialog } from "../features/projects/AddProjectDialog";
 import { ProjectDetailDrawer } from "../features/projects/ProjectDetailDrawer";
+import { filterProjects } from "../features/projects/filter";
+import { buildLaunchNotice } from "../features/projects/launchNotice";
 import { toErrorMessage } from "../services/backend";
+import { copyText } from "../services/clipboard";
 import type { Project, ProjectSort } from "../types/domain";
 import styles from "./ProjectsPage.module.css";
-
-const SORT_OPTIONS: Array<{ value: ProjectSort; label: string }> = [
-  { value: "recent", label: "最近访问" },
-  { value: "created", label: "创建时间" },
-  { value: "name", label: "名称" },
-];
 
 /** 项目列表页面。数据来自本地 SQLite。 */
 export function ProjectsPage() {
@@ -38,8 +37,20 @@ export function ProjectsPage() {
     touchOpened,
     setProjectTool,
     launchProject,
+    openDirectory,
   } = useProjects();
   const { tools } = useTools();
+  const { pendingProjectId, clearPendingProject } = useApp();
+  const { t } = useI18n();
+
+  const sortOptions = useMemo<Array<{ value: ProjectSort; label: string }>>(
+    () => [
+      { value: "recent", label: t("projects.sort.recent") },
+      { value: "created", label: t("projects.sort.created") },
+      { value: "name", label: t("projects.sort.name") },
+    ],
+    [t],
+  );
 
   const [query, setQuery] = useState("");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
@@ -59,17 +70,33 @@ export function ProjectsPage() {
     ? projects.find((project) => project.id === selectedId) ?? null
     : null;
 
-  const filtered = useMemo(() => {
-    const keyword = query.trim().toLowerCase();
-    return projects.filter((project) => {
-      const matchesQuery =
-        !keyword ||
-        project.name.toLowerCase().includes(keyword) ||
-        project.path.toLowerCase().includes(keyword);
-      const matchesFavorite = !favoritesOnly || project.isFavorite;
-      return matchesQuery && matchesFavorite;
-    });
-  }, [projects, query, favoritesOnly]);
+  // 消费来自其它页面（如 Overview）的项目深链，打开对应详情。
+  useEffect(() => {
+    if (!pendingProjectId || loading) {
+      return;
+    }
+    const target = projects.find((project) => project.id === pendingProjectId);
+    if (target) {
+      setSelectedId(target.id);
+      setActionError(null);
+      void touchOpened(target.id).catch(() => undefined);
+    } else {
+      setActionError(t("projects.notFound"));
+    }
+    clearPendingProject();
+  }, [
+    pendingProjectId,
+    loading,
+    projects,
+    touchOpened,
+    clearPendingProject,
+    t,
+  ]);
+
+  const filtered = useMemo(
+    () => filterProjects(projects, query, favoritesOnly),
+    [projects, query, favoritesOnly],
+  );
 
   const hasProjects = projects.length > 0;
 
@@ -92,7 +119,7 @@ export function ProjectsPage() {
       }
       setPendingRemove(null);
     } catch (cause) {
-      setActionError(toErrorMessage(cause, "移除项目失败。"));
+      setActionError(toErrorMessage(cause, t("projects.removeFailed")));
     } finally {
       setRemoving(false);
     }
@@ -103,7 +130,7 @@ export function ProjectsPage() {
     try {
       await setFavorite(project.id, !project.isFavorite);
     } catch (cause) {
-      setActionError(toErrorMessage(cause, "更新收藏状态失败。"));
+      setActionError(toErrorMessage(cause, t("projects.favoriteFailed")));
     }
   }
 
@@ -113,7 +140,7 @@ export function ProjectsPage() {
     try {
       await setProjectTool(project.id, toolId);
     } catch (cause) {
-      setActionError(toErrorMessage(cause, "设置默认工具失败。"));
+      setActionError(toErrorMessage(cause, t("projects.setToolFailed")));
     }
   }
 
@@ -124,13 +151,12 @@ export function ProjectsPage() {
       const result = await launchProject(project.id, toolId);
       setLaunchNotice({
         tone: "success",
-        title: `已在项目中启动 ${result.toolName}`,
-        message: `工作目录：${result.workingDir}`,
+        ...buildLaunchNotice(result, t),
       });
     } catch (cause) {
       setLaunchNotice({
         tone: "danger",
-        title: "启动工具失败",
+        title: t("projects.launchFailedTitle"),
         message: toErrorMessage(cause),
       });
     } finally {
@@ -138,11 +164,30 @@ export function ProjectsPage() {
     }
   }
 
+  async function handleOpenDir(project: Project) {
+    setActionError(null);
+    try {
+      await openDirectory(project.id);
+    } catch (cause) {
+      setActionError(toErrorMessage(cause, t("health.openFailed")));
+    }
+  }
+
+  async function handleCopyPath(project: Project) {
+    setActionError(null);
+    const ok = await copyText(project.path);
+    if (ok) {
+      setLaunchNotice({ tone: "success", title: t("health.copied") });
+    } else {
+      setActionError(t("health.copyFailed"));
+    }
+  }
+
   return (
     <div className={styles.page}>
       <PageHeader
-        title="Projects"
-        description="管理本地开发项目。数据保存在本机的 SQLite 数据库中。"
+        title={t("projects.title")}
+        description={t("projects.description")}
         actions={
           <Button
             variant="primary"
@@ -150,19 +195,19 @@ export function ProjectsPage() {
             onClick={() => setAddOpen(true)}
             disabled={!desktopAvailable}
           >
-            Add Project
+            {t("projects.add")}
           </Button>
         }
       />
 
       {!desktopAvailable && (
-        <Notice tone="warning" title="未连接本地数据">
-          当前不在桌面应用中运行，项目数据不可用。
+        <Notice tone="warning" title={t("projects.notDesktopTitle")}>
+          {t("projects.notDesktopBody")}
         </Notice>
       )}
 
       {error && (
-        <Notice tone="danger" title="读取失败">
+        <Notice tone="danger" title={t("projects.loadFailedTitle")}>
           {error}
           <div className={styles.noticeAction}>
             <Button
@@ -171,7 +216,7 @@ export function ProjectsPage() {
               icon={<RefreshCw size={14} aria-hidden="true" />}
               onClick={() => void refresh()}
             >
-              重试
+              {t("common.retry")}
             </Button>
           </div>
         </Notice>
@@ -189,34 +234,37 @@ export function ProjectsPage() {
         <SearchInput
           value={query}
           onChange={setQuery}
-          placeholder="搜索项目名称或路径…"
-          label="搜索项目"
+          placeholder={t("projects.searchPlaceholder")}
+          label={t("projects.searchLabel")}
         />
         <SegmentedControl
-          ariaLabel="项目排序方式"
+          ariaLabel={t("projects.sortAria")}
           size="sm"
-          options={SORT_OPTIONS}
+          options={sortOptions}
           value={sort}
           onChange={setSort}
         />
         <Switch
-          label="只看收藏"
+          label={t("projects.favoritesOnly")}
           checked={favoritesOnly}
           onChange={setFavoritesOnly}
         />
         <span className={styles.count}>
-          {filtered.length} / {projects.length} 个项目
+          {t("projects.count", {
+            filtered: filtered.length,
+            total: projects.length,
+          })}
         </span>
       </div>
 
       <div className={styles.listWrap}>
         {loading && !hasProjects ? (
-          <p className={styles.status}>正在加载项目…</p>
+          <p className={styles.status}>{t("projects.loading")}</p>
         ) : !hasProjects ? (
           <EmptyState
             icon={FolderPlus}
-            title="还没有项目"
-            description="创建一个新的项目目录，或导入一个已存在的本地目录。"
+            title={t("projects.emptyTitle")}
+            description={t("projects.emptyDescription")}
             action={
               <Button
                 variant="primary"
@@ -224,7 +272,7 @@ export function ProjectsPage() {
                 onClick={() => setAddOpen(true)}
                 disabled={!desktopAvailable}
               >
-                Add Project
+                {t("projects.add")}
               </Button>
             }
           />
@@ -239,14 +287,16 @@ export function ProjectsPage() {
             onRename={openDetail}
             onToggleFavorite={handleToggleFavorite}
             onRemove={(project) => setPendingRemove(project)}
+            onOpenDir={handleOpenDir}
+            onCopyPath={handleCopyPath}
             onSetTool={handleSetTool}
             onLaunch={handleLaunch}
           />
         ) : (
           <EmptyState
             icon={SearchX}
-            title="没有匹配的项目"
-            description="尝试调整搜索关键词或筛选条件。"
+            title={t("projects.noMatchTitle")}
+            description={t("projects.noMatchDescription")}
             action={
               <Button
                 variant="secondary"
@@ -255,7 +305,7 @@ export function ProjectsPage() {
                   setFavoritesOnly(false);
                 }}
               >
-                清除筛选
+                {t("common.clearFilter")}
               </Button>
             }
           />
@@ -276,13 +326,15 @@ export function ProjectsPage() {
 
       <ConfirmDialog
         open={pendingRemove !== null}
-        title="移除项目？"
+        title={t("projects.confirmRemoveTitle")}
         description={
           pendingRemove
-            ? `将从列表中移除「${pendingRemove.name}」，磁盘目录保持不动。`
+            ? t("projects.confirmRemoveDescription", {
+                name: pendingRemove.name,
+              })
             : undefined
         }
-        confirmLabel="移除"
+        confirmLabel={t("common.remove")}
         tone="danger"
         busy={removing}
         onConfirm={handleRemove}

@@ -4,6 +4,7 @@
  * 仅在 Tauri 桌面运行时可用；纯浏览器开发模式返回 null，由调用方给出提示。
  */
 
+import { t } from "../i18n/translate";
 import { isDesktopRuntime } from "./backend";
 
 interface PickDirectoryOptions {
@@ -24,7 +25,7 @@ export async function pickDirectory(
   const selected = await open({
     directory: true,
     multiple: false,
-    title: options.title ?? "选择文件夹",
+    title: options.title ?? t("dialog.pickDirectory"),
     defaultPath: options.defaultPath ?? undefined,
   });
 
@@ -51,12 +52,40 @@ export async function pickFile(
   const selected = await open({
     directory: false,
     multiple: false,
-    title: options.title ?? "选择可执行文件",
+    title: options.title ?? t("dialog.pickExecutable"),
     defaultPath: options.defaultPath ?? undefined,
     filters: options.extensions
-      ? [{ name: "可执行文件", extensions: options.extensions }]
+      ? [{ name: t("dialog.executableFilter"), extensions: options.extensions }]
       : undefined,
   });
 
   return typeof selected === "string" ? selected : null;
+}
+
+interface PickSaveFileOptions {
+  /** 对话框打开时的初始文件名或路径。 */
+  defaultPath?: string | null;
+  title?: string;
+  /** 允许扩展名（不含点），例如 ["vibeacross-backup"]。 */
+  extensions?: string[];
+}
+
+/** 打开「另存为」文件对话框，返回所选绝对路径；取消或不可用时返回 null。 */
+export async function pickSaveFile(
+  options: PickSaveFileOptions = {},
+): Promise<string | null> {
+  if (!isDesktopRuntime()) {
+    return null;
+  }
+
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  const selected = await save({
+    title: options.title ?? t("dialog.saveBackup"),
+    defaultPath: options.defaultPath ?? undefined,
+    filters: options.extensions
+      ? [{ name: t("dialog.backupFilter"), extensions: options.extensions }]
+      : undefined,
+  });
+
+  return selected ?? null;
 }

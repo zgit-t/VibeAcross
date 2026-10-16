@@ -24,18 +24,12 @@
 }
 
 .mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
   flex-shrink: 0;
-  width: 26px;
-  height: 26px;
-  border-radius: var(--radius-md);
-  background: var(--color-accent);
-  color: var(--color-accent-contrast);
-  font-size: var(--font-size-xs);
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  height: 24px;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
 }
 
 .brandText {
@@ -62,6 +56,11 @@
 
 .collapsed .collapseButton {
   margin-left: 0;
+}
+
+.searchSlot {
+  display: flex;
+  margin-bottom: var(--space-3);
 }
 
 .nav {

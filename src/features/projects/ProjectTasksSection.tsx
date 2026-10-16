@@ -4,6 +4,7 @@ import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Notice } from "../../components/ui/Notice";
 import { useTaskList } from "../../context/TasksContext";
+import { useI18n } from "../../i18n";
 import { TaskDialog } from "../tasks/TaskDialog";
 import { TaskList } from "../tasks/TaskList";
 import type { Task } from "../../types/domain";
@@ -24,6 +25,7 @@ export function ProjectTasksSection({
     [projectId],
   );
   const { tasks, loading, error } = useTaskList(query);
+  const { t } = useI18n();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Task | null>(null);
 
@@ -36,7 +38,9 @@ export function ProjectTasksSection({
     <section className={styles.section}>
       <div className={styles.header}>
         <span className={styles.label}>
-          任务{!loading && tasks.length > 0 ? `（${tasks.length}）` : ""}
+          {!loading && tasks.length > 0
+            ? t("projectTasks.labelCount", { count: tasks.length })
+            : t("projectTasks.label")}
         </span>
         <Button
           variant="secondary"
@@ -47,7 +51,7 @@ export function ProjectTasksSection({
             setDialogOpen(true);
           }}
         >
-          新建任务
+          {t("projectTasks.newTask")}
         </Button>
       </div>
 
@@ -67,8 +71,8 @@ export function ProjectTasksSection({
           <EmptyState
             compact
             icon={ListPlus}
-            title="该项目还没有任务"
-            description="创建任务来跟踪这个项目的开发计划。"
+            title={t("projectTasks.emptyTitle")}
+            description={t("projectTasks.emptyDescription")}
           />
         )}
       </div>

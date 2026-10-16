@@ -61,6 +61,12 @@ pub struct ToolDefinition {
     pub candidate_paths: &'static [&'static str],
     /// 注册表卸载项 `DisplayName` 匹配关键词（不区分大小写）。
     pub registry_keywords: &'static [&'static str],
+    /// 注册表 `App Paths` 中登记的可执行文件名（精确匹配，不区分大小写）。
+    ///
+    /// 部分安装程序会把安装位置登记到
+    /// `HK{CU,LM}\Software\Microsoft\Windows\CurrentVersion\App Paths\<name>`，
+    /// 即使安装目录由用户自选也能据此定位，是候选路径之外最可靠的补充来源。
+    pub app_paths: &'static [&'static str],
     /// 自动检测是否可靠。
     ///
     /// false 表示安装位置不可预测（例如由用户自选或通过应用商店安装），
@@ -91,11 +97,16 @@ const CATALOG: &[ToolDefinition] = &[
             r"%LOCALAPPDATA%\Programs\Trae CN\Trae CN.exe",
             r"%PROGRAMFILES%\Trae\Trae.exe",
             r"%PROGRAMFILES%\Trae CN\Trae CN.exe",
+            r"%PROGRAMFILES(X86)%\Trae\Trae.exe",
+            r"%PROGRAMFILES(X86)%\Trae CN\Trae CN.exe",
+            r"%PROGRAMW6432%\Trae\Trae.exe",
+            r"%PROGRAMW6432%\Trae CN\Trae CN.exe",
         ],
         registry_keywords: &["Trae"],
+        app_paths: &["Trae.exe", "Trae CN.exe"],
         auto_detect_reliable: true,
         version_args: &[],
-        detection_note: "候选安装目录 + 卸载注册表项（安装目录可在安装时更改）。",
+        detection_note: "候选安装目录（用户级/系统级）+ App Paths 注册表项 + 卸载注册表项（安装目录可在安装时更改）。",
         // Trae 基于 VS Code 内核，接受以目录作为唯一参数打开。
         launch_plan: LaunchPlan::Method(LaunchMethod::FolderArgument),
         restore_plan: RestorePlan::Project,
@@ -112,15 +123,20 @@ const CATALOG: &[ToolDefinition] = &[
         commands: &[],
         candidate_paths: &[
             r"%LOCALAPPDATA%\Programs\WorkBuddy\WorkBuddy.exe",
+            r"%LOCALAPPDATA%\Programs\Tencent WorkBuddy\Tencent WorkBuddy.exe",
             r"%LOCALAPPDATA%\WorkBuddy\WorkBuddy.exe",
             r"%LOCALAPPDATA%\Tencent\WorkBuddy\WorkBuddy.exe",
             r"%PROGRAMFILES%\WorkBuddy\WorkBuddy.exe",
+            r"%PROGRAMFILES%\Tencent WorkBuddy\Tencent WorkBuddy.exe",
+            r"%PROGRAMFILES(X86)%\WorkBuddy\WorkBuddy.exe",
+            r"%PROGRAMW6432%\WorkBuddy\WorkBuddy.exe",
         ],
         registry_keywords: &["WorkBuddy"],
+        app_paths: &["WorkBuddy.exe", "Tencent WorkBuddy.exe"],
         // 安装路径由用户自选，且可能通过应用商店安装，无法可靠判定未安装。
         auto_detect_reliable: false,
         version_args: &[],
-        detection_note: "卸载注册表项 + 常见候选目录；安装位置不可预测，检测不到时不会判定为未安装。",
+        detection_note: "卸载注册表项 + App Paths 注册表项 + 常见候选目录；安装位置不可预测，检测不到时不会判定为未安装。",
         // 官方未提供可确认的命令行启动参数，保持保守，不假设与其它 IDE 相同。
         launch_plan: LaunchPlan::Unsupported(
             "尚未确认 WorkBuddy 的命令行启动参数，暂不支持受控启动。可在该应用中手动打开项目目录。",
@@ -144,6 +160,7 @@ const CATALOG: &[ToolDefinition] = &[
             r"%APPDATA%\npm\claude.cmd",
         ],
         registry_keywords: &[],
+        app_paths: &[],
         auto_detect_reliable: true,
         version_args: &["--version"],
         detection_note: "PATH 命令解析 + 官方安装目录 + 有限版本查询。",
@@ -167,6 +184,7 @@ const CATALOG: &[ToolDefinition] = &[
             r"%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe",
         ],
         registry_keywords: &[],
+        app_paths: &[],
         auto_detect_reliable: true,
         version_args: &["--version"],
         detection_note: "PATH 命令解析 + npm/官方安装目录 + 有限版本查询。",
@@ -186,11 +204,14 @@ const CATALOG: &[ToolDefinition] = &[
         candidate_paths: &[
             r"%LOCALAPPDATA%\Programs\cursor\Cursor.exe",
             r"%PROGRAMFILES%\cursor\Cursor.exe",
+            r"%PROGRAMFILES(X86)%\cursor\Cursor.exe",
+            r"%PROGRAMW6432%\cursor\Cursor.exe",
         ],
         registry_keywords: &["Cursor"],
+        app_paths: &["Cursor.exe"],
         auto_detect_reliable: true,
         version_args: &[],
-        detection_note: "候选安装目录（用户级/系统级）+ 卸载注册表项。",
+        detection_note: "候选安装目录（用户级/系统级）+ App Paths 注册表项 + 卸载注册表项。",
         // Cursor 基于 VS Code 内核，接受以目录作为唯一参数打开。
         launch_plan: LaunchPlan::Method(LaunchMethod::FolderArgument),
         restore_plan: RestorePlan::Project,
@@ -210,6 +231,7 @@ const CATALOG: &[ToolDefinition] = &[
             r"%APPDATA%\npm\opencode.cmd",
         ],
         registry_keywords: &[],
+        app_paths: &[],
         auto_detect_reliable: true,
         version_args: &["--version"],
         detection_note: "PATH 命令解析 + 官方安装目录 + 有限版本查询。",

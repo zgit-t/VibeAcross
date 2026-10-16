@@ -7,14 +7,15 @@ import {
   useState,
 } from "react";
 import type { ReactNode } from "react";
+import { t } from "../i18n/translate";
 import {
   isDesktopRuntime,
-  NOT_DESKTOP_MESSAGE,
+  notDesktopMessage,
   toErrorMessage,
 } from "../services/backend";
 import * as toolsService from "../services/tools";
 import type { ToolConfigInput, ToolEntry, ToolState } from "../types/domain";
-import { useActivity } from "./ActivityContext";
+import { useRevision } from "./RevisionContext";
 
 const EMPTY_STATE: ToolState = { entries: [], lastDetectionAt: null };
 
@@ -29,6 +30,8 @@ interface ToolsContextValue {
   refresh: () => Promise<void>;
   /** 触发检测；不传工具 id 时进行全量检测。 */
   detect: (toolId?: string) => Promise<void>;
+  /** 仅重新校验一条已保存的配置（路径 / 命令），不触发全量自动检测。 */
+  revalidateTool: (id: string) => Promise<void>;
   addTool: (input: ToolConfigInput) => Promise<void>;
   updateTool: (id: string, input: ToolConfigInput) => Promise<void>;
   removeTool: (id: string) => Promise<void>;
@@ -46,7 +49,7 @@ const ToolsContext = createContext<ToolsContextValue | null>(null);
  */
 export function ToolsProvider({ children }: { children: ReactNode }) {
   const desktopAvailable = isDesktopRuntime();
-  const { bumpRevision } = useActivity();
+  const { bumpRevision } = useRevision();
   const [state, setState] = useState<ToolState>(EMPTY_STATE);
   const [loading, setLoading] = useState(desktopAvailable);
   const [detecting, setDetecting] = useState(false);
@@ -64,7 +67,7 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
       setState(result);
       setError(null);
     } catch (cause) {
-      setError(toErrorMessage(cause, "读取工具列表失败。"));
+      setError(toErrorMessage(cause, t("error.readTools")));
     } finally {
       setLoading(false);
     }
@@ -78,16 +81,16 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
   const run = useCallback(
     async (
       action: () => Promise<ToolState>,
-      recordsActivity = false,
+      bumpsRevision = false,
     ): Promise<void> => {
       if (!desktopAvailable) {
-        throw new Error(NOT_DESKTOP_MESSAGE);
+        throw new Error(notDesktopMessage());
       }
       try {
         const next = await action();
         setState(next);
         setError(null);
-        if (recordsActivity) {
+        if (bumpsRevision) {
           bumpRevision();
         }
       } catch (cause) {
@@ -115,6 +118,10 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
     (input: ToolConfigInput) => run(() => toolsService.addTool(input), true),
     [run],
   );
+  const revalidateTool = useCallback(
+    (id: string) => run(() => toolsService.revalidateTool(id), true),
+    [run],
+  );
   const updateTool = useCallback(
     (id: string, input: ToolConfigInput) =>
       run(() => toolsService.updateTool(id, input), true),
@@ -140,13 +147,14 @@ export function ToolsProvider({ children }: { children: ReactNode }) {
       desktopAvailable,
       refresh: load,
       detect,
+      revalidateTool,
       addTool,
       updateTool,
       removeTool,
       setDefaultTool,
       clearError: () => setError(null),
     }),
-    [state, loading, detecting, error, desktopAvailable, load, detect, addTool, updateTool, removeTool, setDefaultTool],
+    [state, loading, detecting, error, desktopAvailable, load, detect, revalidateTool, addTool, updateTool, removeTool, setDefaultTool],
   );
 
   return <ToolsContext.Provider value={value}>{children}</ToolsContext.Provider>;

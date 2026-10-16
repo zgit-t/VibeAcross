@@ -2,6 +2,7 @@ import { X } from "lucide-react";
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { t } from "../../i18n/translate";
 import { IconButton } from "./IconButton";
 import styles from "./Drawer.module.css";
 
@@ -65,7 +66,7 @@ export function Drawer({
             <h2 className={styles.title}>{title}</h2>
             {subtitle && <p className={styles.subtitle}>{subtitle}</p>}
           </div>
-          <IconButton label="关闭" size="sm" onClick={onClose}>
+          <IconButton label={t("common.close")} size="sm" onClick={onClose}>
             <X size={16} aria-hidden="true" />
           </IconButton>
         </header>

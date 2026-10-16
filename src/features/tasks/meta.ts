@@ -1,53 +1,78 @@
 import { CheckCircle2, CircleDashed, LoaderCircle } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import type { TranslationKey, TranslationVars } from "../../i18n";
 import type { TaskPriority, TaskSort, TaskStatus } from "../../types/domain";
 
 type Tone = "neutral" | "accent" | "success" | "warning" | "danger";
 
+/** 与 `useI18n()` 的 `t` 签名一致，便于在纯函数中注入翻译器。 */
+export type Translate = (key: TranslationKey, vars?: TranslationVars) => string;
+
 export interface TaskStatusMeta {
-  label: string;
+  labelKey: TranslationKey;
   icon: LucideIcon;
   tone: Tone;
 }
 
 /** 状态元数据。颜色之外同时提供图标与文案，避免仅凭颜色传达状态。 */
-export const TASK_STATUS_META: Record<TaskStatus, TaskStatusMeta> = {
-  todo: { label: "待办", icon: CircleDashed, tone: "neutral" },
-  inProgress: { label: "进行中", icon: LoaderCircle, tone: "accent" },
-  done: { label: "已完成", icon: CheckCircle2, tone: "success" },
-};
+export const TASK_STATUS_META = {
+  todo: { labelKey: "taskStatus.todo", icon: CircleDashed, tone: "neutral" },
+  inProgress: {
+    labelKey: "taskStatus.inProgress",
+    icon: LoaderCircle,
+    tone: "accent",
+  },
+  done: { labelKey: "taskStatus.done", icon: CheckCircle2, tone: "success" },
+} satisfies Record<TaskStatus, TaskStatusMeta>;
 
 export const TASK_PRIORITY_META: Record<
   TaskPriority,
-  { label: string; tone: Tone }
+  { labelKey: TranslationKey; tone: Tone }
 > = {
-  low: { label: "低", tone: "neutral" },
-  medium: { label: "中", tone: "warning" },
-  high: { label: "高", tone: "danger" },
+  low: { labelKey: "taskPriority.low", tone: "neutral" },
+  medium: { labelKey: "taskPriority.medium", tone: "warning" },
+  high: { labelKey: "taskPriority.high", tone: "danger" },
 };
 
 /** 状态的可选项顺序（用于筛选与表单）。 */
 export const TASK_STATUS_ORDER: TaskStatus[] = ["todo", "inProgress", "done"];
 
-export const TASK_STATUS_OPTIONS: Array<{ value: TaskStatus; label: string }> =
-  TASK_STATUS_ORDER.map((value) => ({
+const PRIORITY_ORDER: TaskPriority[] = ["low", "medium", "high"];
+
+export function taskStatusLabel(t: Translate, status: TaskStatus): string {
+  return t(TASK_STATUS_META[status].labelKey);
+}
+
+export function taskPriorityLabel(t: Translate, priority: TaskPriority): string {
+  return t(TASK_PRIORITY_META[priority].labelKey);
+}
+
+export function taskStatusOptions(
+  t: Translate,
+): Array<{ value: TaskStatus; label: string }> {
+  return TASK_STATUS_ORDER.map((value) => ({
     value,
-    label: TASK_STATUS_META[value].label,
+    label: t(TASK_STATUS_META[value].labelKey),
   }));
+}
 
-export const TASK_PRIORITY_OPTIONS: Array<{
-  value: TaskPriority;
-  label: string;
-}> = [
-  { value: "low", label: "低" },
-  { value: "medium", label: "中" },
-  { value: "high", label: "高" },
-];
+export function taskPriorityOptions(
+  t: Translate,
+): Array<{ value: TaskPriority; label: string }> {
+  return PRIORITY_ORDER.map((value) => ({
+    value,
+    label: t(TASK_PRIORITY_META[value].labelKey),
+  }));
+}
 
-export const TASK_SORT_OPTIONS: Array<{ value: TaskSort; label: string }> = [
-  { value: "updated", label: "最近更新" },
-  { value: "created", label: "创建时间" },
-];
+export function taskSortOptions(
+  t: Translate,
+): Array<{ value: TaskSort; label: string }> {
+  return [
+    { value: "updated", label: t("taskSort.updated") },
+    { value: "created", label: t("taskSort.created") },
+  ];
+}
 
 /**
  * 截止日期的展示状态。

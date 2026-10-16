@@ -7,7 +7,9 @@ use vibeacross_lib::tools::detect::{
     resolve_in_paths, run_version_command, DetectError, Detector, RegistryInstall, SystemDetector,
     VersionOutcome,
 };
-use vibeacross_lib::tools::model::{ToolConfigInput, ToolEntry, ToolState, ToolStatus, ToolType};
+use vibeacross_lib::tools::model::{
+    LaunchMethod, LaunchSupport, ToolConfigInput, ToolEntry, ToolState, ToolStatus, ToolType,
+};
 use vibeacross_lib::tools::service;
 
 /// 可注入的假检测器：完全由测试控制，不触碰真实系统。
@@ -18,6 +20,7 @@ struct FakeDetector {
     versions: Mutex<HashMap<String, String>>,
     denied: Mutex<HashSet<String>>,
     registry: Mutex<Vec<RegistryInstall>>,
+    app_paths: Mutex<HashMap<String, String>>,
     /// 允许回退到真实文件系统（用于「含空格 / 非 ASCII 路径」测试）。
     real_fs: bool,
 }
@@ -52,6 +55,14 @@ impl FakeDetector {
             .get_mut()
             .unwrap()
             .insert(normalize(path), version.to_string());
+        self
+    }
+
+    fn with_app_path(mut self, exe_name: &str, path: &str) -> Self {
+        self.app_paths
+            .get_mut()
+            .unwrap()
+            .insert(exe_name.to_string(), path.to_string());
         self
     }
 
@@ -98,6 +109,14 @@ impl Detector for FakeDetector {
 
     fn registry_installs(&self, _keywords: &[&str]) -> Vec<RegistryInstall> {
         self.registry.lock().unwrap().clone()
+    }
+
+    fn app_path(&self, exe_name: &str) -> Option<PathBuf> {
+        self.app_paths
+            .lock()
+            .unwrap()
+            .get(exe_name)
+            .map(PathBuf::from)
     }
 
     fn query_version(&self, executable: &Path, _args: &[&str]) -> VersionOutcome {
@@ -212,6 +231,54 @@ fn manual_path_is_revalidated_on_detection() {
 }
 
 #[test]
+fn revalidate_tool_rechecks_only_that_config_without_creating_duplicates() {
+    let db = memory_db();
+    let conn = db.conn().unwrap();
+    let detector = FakeDetector::new();
+
+    service::add_tool(
+        &conn,
+        &detector,
+        input("cursor", Some(r"C:\apps\Cursor\Cursor.exe"), None),
+    )
+    .unwrap();
+
+    let before = service::tool_state(&conn, &detector).unwrap();
+    let entry = find(&before, "cursor");
+    assert_eq!(entry.status, ToolStatus::PathMissing);
+    let id = entry.id.clone();
+    let count_before = before
+        .entries
+        .iter()
+        .filter(|candidate| candidate.tool_id == "cursor")
+        .count();
+
+    // 路径恢复后仅重新校验这一条配置：状态变为已检测，且不新增自动检测条目。
+    detector.add_file(r"C:\apps\Cursor\Cursor.exe");
+    let after = service::revalidate_tool(&conn, &detector, &id).unwrap();
+    assert_eq!(
+        after
+            .entries
+            .iter()
+            .filter(|candidate| candidate.tool_id == "cursor")
+            .count(),
+        count_before
+    );
+    assert_eq!(find(&after, "cursor").status, ToolStatus::Detected);
+    assert_eq!(find(&after, "cursor").source, "manual");
+}
+
+#[test]
+fn revalidate_tool_rejects_unknown_id() {
+    let db = memory_db();
+    let conn = db.conn().unwrap();
+    let detector = FakeDetector::new();
+
+    let error = service::revalidate_tool(&conn, &detector, "missing").unwrap_err();
+    assert_eq!(error.code, "TOOL_NOT_FOUND");
+}
+
+#[test]
 fn duplicate_manual_configuration_is_rejected() {
     let db = memory_db();
     let conn = db.conn().unwrap();
@@ -317,12 +384,8 @@ fn permission_error_is_reported_as_detection_failed() {
     let conn = db.conn().unwrap();
     let detector = FakeDetector::new();
 
-    let candidates = [
-        r"%LOCALAPPDATA%\Programs\Trae\Trae.exe",
-        r"%LOCALAPPDATA%\Programs\Trae CN\Trae CN.exe",
-        r"%PROGRAMFILES%\Trae\Trae.exe",
-        r"%PROGRAMFILES%\Trae CN\Trae CN.exe",
-    ];
+    let candidates =
+        vibeacross_lib::tools::catalog::find("trae").expect("未找到 trae 定义").candidate_paths;
     for candidate in candidates {
         if let Some(expanded) = vibeacross_lib::tools::catalog::expand_candidate(candidate) {
             detector.deny(&expanded);
@@ -334,6 +397,80 @@ fn permission_error_is_reported_as_detection_failed() {
 
     assert_eq!(trae.status, ToolStatus::DetectionFailed);
     assert!(trae.last_error.is_some());
+}
+
+#[test]
+fn script_installation_is_launchable_via_command_interpreter() {
+    // Windows 上 npm 安装的 CLI 工具通常只有 `.cmd` 入口：应判定为可启动，
+    // 并沿用命令行工作目录方式（实际经命令解释器启动）。
+    let db = memory_db();
+    let conn = db.conn().unwrap();
+    let path = r"C:\Users\me\AppData\Roaming\npm\opencode.cmd";
+    let detector = FakeDetector::new().with_file(path);
+
+    service::add_tool(&conn, &detector, input("opencode", Some(path), None)).unwrap();
+    let state = service::tool_state(&conn, &detector).unwrap();
+    let entry = find(&state, "opencode");
+
+    assert_eq!(entry.status, ToolStatus::Detected);
+    assert_eq!(entry.launch.support, LaunchSupport::Supported);
+    assert_eq!(entry.launch.method, Some(LaunchMethod::WorkingDirectory));
+}
+
+#[test]
+fn unsafe_script_path_requires_configuration() {
+    // 路径含无法安全转义的字符时，不得谎报可启动，转为可操作的补充配置提示。
+    let db = memory_db();
+    let conn = db.conn().unwrap();
+    let path = r"C:\npm\bad%tool.cmd";
+    let detector = FakeDetector::new().with_file(path);
+
+    service::add_tool(&conn, &detector, input("opencode", Some(path), None)).unwrap();
+    let state = service::tool_state(&conn, &detector).unwrap();
+    let entry = find(&state, "opencode");
+
+    assert_eq!(entry.status, ToolStatus::Detected);
+    assert_eq!(entry.launch.support, LaunchSupport::NeedsConfiguration);
+    assert!(entry.launch.method.is_none());
+    assert!(
+        entry.launch.reason.contains('%'),
+        "原因应说明无法安全转义的字符：{}",
+        entry.launch.reason
+    );
+}
+
+#[test]
+fn manual_configuration_is_not_overwritten_by_detection() {
+    let db = memory_db();
+    let conn = db.conn().unwrap();
+    let manual = r"D:\Portable\Cursor\Cursor.exe";
+    let auto = r"C:\apps\Cursor\Cursor.exe";
+    let detector = FakeDetector::new()
+        .with_file(manual)
+        .with_file(auto)
+        .with_app_path("Cursor.exe", auto);
+
+    service::add_tool(&conn, &detector, input("cursor", Some(manual), None)).unwrap();
+
+    // 全量检测会经 App Paths 找到另一个安装位置，但不得覆盖用户手动配置的路径。
+    let after = service::detect_tools(&conn, &detector, Some("cursor")).unwrap();
+
+    let manual_entry = after
+        .entries
+        .iter()
+        .find(|entry| entry.source == "manual")
+        .expect("手动配置条目应保留");
+    assert_eq!(manual_entry.executable_path.as_deref(), Some(manual));
+    assert_eq!(manual_entry.status, ToolStatus::Detected);
+
+    // 自动检测结果作为独立条目并存，而不是覆盖手动条目。
+    let auto_entries: Vec<_> = after
+        .entries
+        .iter()
+        .filter(|entry| entry.tool_id == "cursor" && entry.source == "auto")
+        .collect();
+    assert_eq!(auto_entries.len(), 1);
+    assert_eq!(auto_entries[0].executable_path.as_deref(), Some(auto));
 }
 
 #[test]
@@ -448,6 +585,79 @@ fn removed_tool_disappears_from_state() {
 }
 
 #[test]
+fn app_paths_locates_desktop_tool_outside_candidate_paths() {
+    // 安装目录由用户自选（不在候选路径中），仅通过 App Paths 注册表登记。
+    let db = memory_db();
+    let conn = db.conn().unwrap();
+    let custom = r"D:\Portable Apps\Trae\Trae.exe";
+    let detector = FakeDetector::new()
+        .with_app_path("Trae.exe", custom)
+        .with_file(custom);
+
+    let state = service::detect_tools(&conn, &detector, Some("trae")).unwrap();
+    let trae = find(&state, "trae");
+
+    assert_eq!(trae.status, ToolStatus::Detected);
+    assert_eq!(trae.executable_path.as_deref(), Some(custom));
+    assert!(
+        trae.detection_method.as_deref().unwrap().contains("App Paths"),
+        "检测方式应记录来源：{:?}",
+        trae.detection_method
+    );
+}
+
+#[test]
+fn workbuddy_is_detected_via_app_paths_without_claiming_not_installed() {
+    let db = memory_db();
+    let conn = db.conn().unwrap();
+    let exe = r"C:\Users\me\AppData\Local\Programs\Tencent WorkBuddy\Tencent WorkBuddy.exe";
+    let detector = FakeDetector::new()
+        .with_app_path("Tencent WorkBuddy.exe", exe)
+        .with_file(exe);
+
+    let state = service::detect_tools(&conn, &detector, Some("workbuddy")).unwrap();
+    let workbuddy = find(&state, "workbuddy");
+
+    assert_eq!(workbuddy.status, ToolStatus::Detected);
+    assert!(workbuddy.executable_path.is_some());
+}
+
+#[test]
+fn auto_detected_app_paths_are_stored_as_auto_source() {
+    let db = memory_db();
+    let conn = db.conn().unwrap();
+    let exe = r"D:\IDE\Cursor\Cursor.exe";
+    let detector = FakeDetector::new()
+        .with_app_path("Cursor.exe", exe)
+        .with_file(exe);
+
+    let state = service::detect_tools(&conn, &detector, Some("cursor")).unwrap();
+    let cursor = find(&state, "cursor");
+    assert_eq!(cursor.status, ToolStatus::Detected);
+    assert_eq!(cursor.source, "auto");
+}
+
+#[test]
+fn desktop_catalog_covers_arch_virtualized_paths_and_app_paths() {
+    for tool_id in ["trae", "workbuddy", "cursor"] {
+        let definition = vibeacross_lib::tools::catalog::find(tool_id).unwrap();
+        assert!(
+            !definition.app_paths.is_empty(),
+            "{tool_id} 应登记用于 App Paths 查找的可执行文件名"
+        );
+        let has_arch_candidate = definition.candidate_paths.iter().any(|candidate| {
+            let upper = candidate.to_ascii_uppercase();
+            upper.contains("PROGRAMFILES(X86)") || upper.contains("PROGRAMW6432")
+        });
+        assert!(
+            has_arch_candidate,
+            "{tool_id} 应包含 %ProgramFiles(x86)% / %ProgramW6432% 候选路径"
+        );
+    }
+}
+
+
+#[test]
 fn resolve_in_paths_prefers_executable_over_script() {
     let workspace = tempfile::tempdir().unwrap();
     let dir = workspace.path();
@@ -507,4 +717,69 @@ fn version_query_times_out_for_slow_command() {
     );
 
     assert_eq!(outcome, VersionOutcome::Timeout);
+}
+
+#[test]
+fn update_tool_changes_path_without_creating_duplicates() {
+    let db = memory_db();
+    let conn = db.conn().unwrap();
+    let detector = FakeDetector::new()
+        .with_file(r"C:\tools\opencode-a.exe")
+        .with_file(r"C:\tools\opencode-b.exe");
+
+    service::add_tool(
+        &conn,
+        &detector,
+        input("opencode", Some(r"C:\tools\opencode-a.exe"), None),
+    )
+    .unwrap();
+    let id = find(&service::tool_state(&conn, &detector).unwrap(), "opencode")
+        .id
+        .clone();
+
+    service::update_tool(
+        &conn,
+        &detector,
+        &id,
+        input("opencode", Some(r"C:\tools\opencode-b.exe"), None),
+    )
+    .unwrap();
+
+    let state = service::tool_state(&conn, &detector).unwrap();
+    let entry = state
+        .entries
+        .iter()
+        .find(|entry| entry.id == id)
+        .expect("更新后应仍存在同一配置");
+    assert!(entry
+        .executable_path
+        .as_deref()
+        .unwrap_or_default()
+        .ends_with("opencode-b.exe"));
+    assert_eq!(entry.status, ToolStatus::Detected);
+    assert_eq!(
+        state
+            .entries
+            .iter()
+            .filter(|entry| entry.tool_id == "opencode")
+            .count(),
+        1,
+        "更新不应新增条目"
+    );
+}
+
+#[test]
+fn update_tool_rejects_unknown_id() {
+    let db = memory_db();
+    let conn = db.conn().unwrap();
+    let detector = FakeDetector::new().with_file(r"C:\tools\opencode.exe");
+
+    let missing = service::update_tool(
+        &conn,
+        &detector,
+        "no-such-id",
+        input("opencode", Some(r"C:\tools\opencode.exe"), None),
+    )
+    .unwrap_err();
+    assert_eq!(missing.code, "TOOL_NOT_FOUND");
 }

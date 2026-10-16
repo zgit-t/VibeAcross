@@ -7,10 +7,11 @@ import {
   useState,
 } from "react";
 import type { ReactNode } from "react";
-import type { LaunchResult, Project, ProjectSort } from "../types/domain";
+import type { LaunchResult, Project, ProjectHealth, ProjectSort } from "../types/domain";
+import { t } from "../i18n/translate";
 import {
   isDesktopRuntime,
-  NOT_DESKTOP_MESSAGE,
+  notDesktopMessage,
   toErrorMessage,
 } from "../services/backend";
 import * as projectsService from "../services/projects";
@@ -18,7 +19,7 @@ import type {
   CreateProjectInput,
   ImportProjectInput,
 } from "../services/projects";
-import { useActivity } from "./ActivityContext";
+import { useRevision } from "./RevisionContext";
 
 interface ProjectsContextValue {
   projects: Project[];
@@ -42,6 +43,10 @@ interface ProjectsContextValue {
   setProjectTool: (id: string, toolId: string | null) => Promise<void>;
   /** 在项目目录中启动工具；`toolId` 为 null 时使用默认工具。 */
   launchProject: (id: string, toolId: string | null) => Promise<LaunchResult>;
+  /** 在系统文件管理器中打开项目目录。 */
+  openDirectory: (id: string) => Promise<void>;
+  /** 按需检查项目健康状态；`revalidate` 时先重新校验默认工具路径。 */
+  checkHealth: (id: string, revalidate?: boolean) => Promise<ProjectHealth>;
 }
 
 const ProjectsContext = createContext<ProjectsContextValue | null>(null);
@@ -54,7 +59,7 @@ const ProjectsContext = createContext<ProjectsContextValue | null>(null);
  */
 export function ProjectsProvider({ children }: { children: ReactNode }) {
   const desktopAvailable = isDesktopRuntime();
-  const { bumpRevision } = useActivity();
+  const { bumpRevision } = useRevision();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(desktopAvailable);
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +78,7 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
         setProjects(result);
         setError(null);
       } catch (cause) {
-        setError(toErrorMessage(cause, "读取项目列表失败。"));
+        setError(toErrorMessage(cause, t("error.readProjects")));
       } finally {
         setLoading(false);
       }
@@ -89,16 +94,16 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
 
   /** 统一包裹一次「执行变更 → 刷新列表」的流程。 */
   const mutate = useCallback(
-    async <T,>(action: () => Promise<T>, recordsActivity = false): Promise<T> => {
+    async <T,>(action: () => Promise<T>, bumpsRevision = false): Promise<T> => {
       if (!desktopAvailable) {
-        throw new Error(NOT_DESKTOP_MESSAGE);
+        throw new Error(notDesktopMessage());
       }
       try {
         const result = await action();
         setError(null);
         await load(sort);
-        // 记录活动的操作会自增版本号，驱动 Activity / Tasks 视图刷新。
-        if (recordsActivity) {
+        // 影响共享数据的操作会自增版本号，驱动其它视图刷新。
+        if (bumpsRevision) {
           bumpRevision();
         }
         return result;
@@ -154,7 +159,7 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
         ),
       launchProject: async (id, toolId) => {
         if (!desktopAvailable) {
-          throw new Error(NOT_DESKTOP_MESSAGE);
+          throw new Error(notDesktopMessage());
         }
         const result = await projectsService.launchProject(id, toolId);
         // 显式指定工具时后端会写入默认关联，刷新列表以保持一致。
@@ -163,6 +168,26 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
         }
         bumpRevision();
         return result;
+      },
+      openDirectory: async (id) => {
+        if (!desktopAvailable) {
+          throw new Error(notDesktopMessage());
+        }
+        try {
+          await projectsService.openProjectDir(id);
+        } catch (cause) {
+          throw new Error(toErrorMessage(cause));
+        }
+      },
+      checkHealth: async (id, revalidate = false) => {
+        if (!desktopAvailable) {
+          throw new Error(notDesktopMessage());
+        }
+        try {
+          return await projectsService.checkProjectHealth(id, revalidate);
+        } catch (cause) {
+          throw new Error(toErrorMessage(cause));
+        }
       },
     }),
     [projects, loading, error, desktopAvailable, sort, refresh, mutate, load, bumpRevision],

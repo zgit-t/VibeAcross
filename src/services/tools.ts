@@ -18,6 +18,11 @@ export function detectTools(toolId?: string | null): Promise<ToolState> {
   return invoke<ToolState>("detect_tools", { toolId: toolId ?? null });
 }
 
+/** 仅重新校验一条已保存的配置（路径 / 命令），不触发全量自动检测。 */
+export function revalidateTool(id: string): Promise<ToolState> {
+  return invoke<ToolState>("revalidate_tool", { id });
+}
+
 export function addTool(input: ToolConfigInput): Promise<ToolState> {
   return invoke<ToolState>("add_tool", { input });
 }

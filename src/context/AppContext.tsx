@@ -17,19 +17,53 @@ import {
 } from "./theme";
 import { isDesktopRuntime, toErrorMessage } from "../services/backend";
 import { getSettings, updateSettings } from "../services/settings";
+import { readPreference, writePreference } from "../services/preferences";
+import { normalizeLocale, setLocale as setActiveLocale } from "../i18n/locale";
+import type { Locale } from "../i18n/locale";
+import { t } from "../i18n/translate";
 import type { AppSettings } from "../types/domain";
 import type { ResolvedTheme, ThemeMode, ViewId } from "../types/navigation";
 
 const EMPTY_SETTINGS: AppSettings = {
   defaultProjectFolder: null,
   theme: null,
-  showLastContextOnStartup: false,
+  showLastContextOnStartup: true,
   autoRestoreLastContext: false,
+  language: null,
 };
+
+/** 界面语言的本地偏好键（SQLite 为主，localStorage 用于快速启动）。 */
+const LANGUAGE_STORAGE_KEY = "vibeacross.language";
+
+function readStoredLanguage(): Locale {
+  return normalizeLocale(readPreference(LANGUAGE_STORAGE_KEY));
+}
+
+function persistLanguage(locale: Locale): void {
+  writePreference(LANGUAGE_STORAGE_KEY, locale);
+}
+
+// 首帧前同步模块级语言，避免格式化工具与粗粒度组件使用过期语言。
+setActiveLocale(readStoredLanguage());
 
 interface AppContextValue {
   activeView: ViewId;
   navigate: (view: ViewId) => void;
+  /** 打开 Projects 页面并定位到指定项目的详情抽屉（深链）。 */
+  openProject: (projectId: string) => void;
+  /** 待处理的项目深链 id；由 Projects 页面消费后清除。 */
+  pendingProjectId: string | null;
+  clearPendingProject: () => void;
+  /** 打开 Tasks 页面并定位到指定任务（深链）。 */
+  openTask: (taskId: string) => void;
+  /** 待处理的任务深链 id；由 Tasks 页面消费后清除。 */
+  pendingTaskId: string | null;
+  clearPendingTask: () => void;
+  /** 打开 Sessions 页面并定位到指定工作上下文（深链）。 */
+  openSession: (sessionId: string) => void;
+  /** 待处理的工作上下文深链 id；由 Sessions 页面消费后清除。 */
+  pendingSessionId: string | null;
+  clearPendingSession: () => void;
 
   themeMode: ThemeMode;
   resolvedTheme: ResolvedTheme;
@@ -50,6 +84,9 @@ interface AppContextValue {
   /** 启动时自动恢复最近的工作上下文（默认关闭）。 */
   autoRestoreLastContext: boolean;
   setAutoRestoreLastContext: (value: boolean) => void;
+  /** 当前界面语言。 */
+  language: Locale;
+  setLanguage: (locale: Locale) => void;
   /** 设置持久化失败时的提示信息。 */
   settingsError: string | null;
   clearSettingsError: () => void;
@@ -63,6 +100,9 @@ const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [activeView, setActiveView] = useState<ViewId>("overview");
+  const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
+  const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
+  const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
   const [themeMode, setThemeModeState] = useState<ThemeMode>(readStoredThemeMode);
   const [systemTheme, setSystemTheme] = useState<ResolvedTheme>(() =>
     resolveTheme("system"),
@@ -71,6 +111,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [aboutOpen, setAboutOpen] = useState(false);
 
   const [settings, setSettings] = useState<AppSettings>(EMPTY_SETTINGS);
+  const [language, setLanguageState] = useState<Locale>(readStoredLanguage);
   const [settingsLoaded, setSettingsLoaded] = useState(!isDesktopRuntime());
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const settingsRef = useRef(settings);
@@ -92,6 +133,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setSettings(loaded);
         if (loaded.theme) {
           setThemeModeState(normalizeThemeMode(loaded.theme));
+        }
+        if (loaded.language) {
+          const stored = normalizeLocale(loaded.language);
+          setLanguageState(stored);
+          setActiveLocale(stored);
+          persistLanguage(stored);
         }
       } catch {
         // 读取失败时保留 localStorage 中的主题作为回退，不影响应用启动。
@@ -124,8 +171,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [resolvedTheme]);
 
   const navigate = useCallback((view: ViewId) => {
+    setPendingProjectId(null);
+    setPendingTaskId(null);
+    setPendingSessionId(null);
     setActiveView(view);
   }, []);
+
+  const openProject = useCallback((projectId: string) => {
+    setPendingTaskId(null);
+    setPendingSessionId(null);
+    setPendingProjectId(projectId);
+    setActiveView("projects");
+  }, []);
+
+  const clearPendingProject = useCallback(() => setPendingProjectId(null), []);
+
+  const openTask = useCallback((taskId: string) => {
+    setPendingProjectId(null);
+    setPendingSessionId(null);
+    setPendingTaskId(taskId);
+    setActiveView("tasks");
+  }, []);
+
+  const clearPendingTask = useCallback(() => setPendingTaskId(null), []);
+
+  const openSession = useCallback((sessionId: string) => {
+    setPendingProjectId(null);
+    setPendingTaskId(null);
+    setPendingSessionId(sessionId);
+    setActiveView("sessions");
+  }, []);
+
+  const clearPendingSession = useCallback(() => setPendingSessionId(null), []);
 
   /** 将设置写入 SQLite；失败时保留现有设置并提示。 */
   const persistSettings = useCallback(async (patch: Partial<AppSettings>) => {
@@ -139,7 +216,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setSettings(saved);
       setSettingsError(null);
     } catch (cause) {
-      setSettingsError(toErrorMessage(cause, "保存设置失败。"));
+      setSettingsError(toErrorMessage(cause, t("error.saveSettings")));
     }
   }, []);
 
@@ -173,6 +250,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [persistSettings],
   );
 
+  const setLanguage = useCallback(
+    (locale: Locale) => {
+      setLanguageState(locale);
+      setActiveLocale(locale);
+      persistLanguage(locale);
+      void persistSettings({ language: locale });
+    },
+    [persistSettings],
+  );
+
   const toggleSidebar = useCallback(() => {
     setSidebarCollapsed((prev) => !prev);
   }, []);
@@ -185,6 +272,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     () => ({
       activeView,
       navigate,
+      openProject,
+      pendingProjectId,
+      clearPendingProject,
+      openTask,
+      pendingTaskId,
+      clearPendingTask,
+      openSession,
+      pendingSessionId,
+      clearPendingSession,
       themeMode,
       resolvedTheme,
       setThemeMode,
@@ -198,6 +294,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setShowLastContextOnStartup,
       autoRestoreLastContext: settings.autoRestoreLastContext,
       setAutoRestoreLastContext,
+      language,
+      setLanguage,
       settingsError,
       clearSettingsError,
       aboutOpen,
@@ -207,6 +305,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [
       activeView,
       navigate,
+      openProject,
+      pendingProjectId,
+      clearPendingProject,
+      openTask,
+      pendingTaskId,
+      clearPendingTask,
+      openSession,
+      pendingSessionId,
+      clearPendingSession,
       themeMode,
       resolvedTheme,
       setThemeMode,
@@ -217,6 +324,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setDefaultProjectFolder,
       setShowLastContextOnStartup,
       setAutoRestoreLastContext,
+      language,
+      setLanguage,
       settingsError,
       clearSettingsError,
       aboutOpen,

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { ListPlus, Plus, SearchX } from "lucide-react";
+import { useApp } from "../context/AppContext";
 import { useProjects } from "../context/ProjectsContext";
 import { useTaskList } from "../context/TasksContext";
+import { useI18n } from "../i18n";
 import { PageHeader } from "../components/layout/PageHeader";
 import { Button } from "../components/ui/Button";
 import { EmptyState } from "../components/ui/EmptyState";
@@ -11,12 +13,13 @@ import { SegmentedControl } from "../components/ui/SegmentedControl";
 import { TaskDialog } from "../features/tasks/TaskDialog";
 import { TaskList } from "../features/tasks/TaskList";
 import {
-  TASK_PRIORITY_OPTIONS,
-  TASK_SORT_OPTIONS,
-  TASK_STATUS_META,
+  taskPriorityOptions,
+  taskSortOptions,
+  taskStatusLabel,
   TASK_STATUS_ORDER,
 } from "../features/tasks/meta";
 import { isDesktopRuntime } from "../services/backend";
+import { getTask } from "../services/tasks";
 import type { Task, TaskPriority, TaskSort, TaskStatus } from "../types/domain";
 import styles from "./TasksPage.module.css";
 
@@ -24,18 +27,12 @@ type StatusFilter = "all" | TaskStatus;
 type PriorityFilter = "all" | TaskPriority;
 type ProjectFilter = "all" | string;
 
-const STATUS_FILTER_OPTIONS: Array<{ value: StatusFilter; label: string }> = [
-  { value: "all", label: "全部状态" },
-  ...TASK_STATUS_ORDER.map((value) => ({
-    value,
-    label: TASK_STATUS_META[value].label,
-  })),
-];
-
 /** 任务管理页面：筛选、搜索、排序并管理任务。 */
 export function TasksPage() {
   const desktopAvailable = isDesktopRuntime();
+  const { pendingTaskId, clearPendingTask, openProject } = useApp();
   const { projects } = useProjects();
+  const { t } = useI18n();
 
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -52,6 +49,30 @@ export function TasksPage() {
     const timer = window.setTimeout(() => setSearch(searchInput.trim()), 250);
     return () => window.clearTimeout(timer);
   }, [searchInput]);
+
+  // 消费来自全局搜索等处的任务深链，打开对应任务的编辑弹窗。
+  useEffect(() => {
+    if (!pendingTaskId || !desktopAvailable) {
+      return;
+    }
+    let cancelled = false;
+    getTask(pendingTaskId)
+      .then((task) => {
+        if (!cancelled) {
+          setEditing(task);
+          setDialogOpen(true);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) {
+          clearPendingTask();
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingTaskId, desktopAvailable, clearPendingTask]);
 
   const query = useMemo(
     () => ({
@@ -74,6 +95,18 @@ export function TasksPage() {
     () => projects.map((p) => ({ id: p.id, name: p.name })),
     [projects],
   );
+  const statusOptions = useMemo(
+    () => [
+      { value: "all" as StatusFilter, label: t("tasks.allStatus") },
+      ...TASK_STATUS_ORDER.map((value) => ({
+        value: value as StatusFilter,
+        label: taskStatusLabel(t, value),
+      })),
+    ],
+    [t],
+  );
+  const priorityOptions = useMemo(() => taskPriorityOptions(t), [t]);
+  const sortOptions = useMemo(() => taskSortOptions(t), [t]);
 
   const hasFilters =
     search.length > 0 ||
@@ -102,8 +135,8 @@ export function TasksPage() {
   return (
     <div className={styles.page}>
       <PageHeader
-        title="Tasks"
-        description="跟踪开发任务的进度、优先级与截止日期。"
+        title={t("tasks.title")}
+        description={t("tasks.description")}
         actions={
           <Button
             variant="primary"
@@ -111,20 +144,20 @@ export function TasksPage() {
             onClick={openCreate}
             disabled={!desktopAvailable || projects.length === 0}
           >
-            New Task
+            {t("tasks.new")}
           </Button>
         }
       />
 
       {!desktopAvailable && (
-        <Notice tone="warning" title="桌面运行时不可用">
-          任务数据保存在本地 SQLite，仅在桌面应用中可用。
+        <Notice tone="warning" title={t("tasks.notDesktopTitle")}>
+          {t("tasks.notDesktopBody")}
         </Notice>
       )}
 
       {desktopAvailable && projects.length === 0 && (
-        <Notice tone="info" title="先创建项目">
-          任务需要归属一个项目。请先在 Projects 页面创建或导入项目，再添加任务。
+        <Notice tone="info" title={t("tasks.needProjectTitle")}>
+          {t("tasks.needProjectBody")}
         </Notice>
       )}
 
@@ -134,17 +167,17 @@ export function TasksPage() {
         <SearchInput
           value={searchInput}
           onChange={setSearchInput}
-          placeholder="搜索任务标题或描述…"
-          label="搜索任务"
+          placeholder={t("tasks.searchPlaceholder")}
+          label={t("tasks.searchLabel")}
         />
 
         <select
           className={styles.filterSelect}
-          aria-label="按项目筛选"
+          aria-label={t("tasks.filterProjectAria")}
           value={projectFilter}
           onChange={(event) => setProjectFilter(event.target.value)}
         >
-          <option value="all">全部项目</option>
+          <option value="all">{t("tasks.allProjects")}</option>
           {projects.map((project) => (
             <option key={project.id} value={project.id}>
               {project.name}
@@ -154,37 +187,39 @@ export function TasksPage() {
 
         <select
           className={styles.filterSelect}
-          aria-label="按优先级筛选"
+          aria-label={t("tasks.filterPriorityAria")}
           value={priorityFilter}
           onChange={(event) =>
             setPriorityFilter(event.target.value as PriorityFilter)
           }
         >
-          <option value="all">全部优先级</option>
-          {TASK_PRIORITY_OPTIONS.map((option) => (
+          <option value="all">{t("tasks.allPriorities")}</option>
+          {priorityOptions.map((option) => (
             <option key={option.value} value={option.value}>
-              优先级 {option.label}
+              {t("tasks.priorityOption", { label: option.label })}
             </option>
           ))}
         </select>
 
         <span className={styles.count}>
-          {tasks.length} 个任务{loading ? "（加载中…）" : ""}
+          {loading
+            ? t("tasks.countLoading", { count: tasks.length })
+            : t("tasks.count", { count: tasks.length })}
         </span>
       </div>
 
       <div className={styles.toolbar}>
         <SegmentedControl
-          ariaLabel="按状态筛选"
+          ariaLabel={t("tasks.filterStatusAria")}
           size="sm"
-          options={STATUS_FILTER_OPTIONS}
+          options={statusOptions}
           value={statusFilter}
           onChange={setStatusFilter}
         />
         <SegmentedControl
-          ariaLabel="排序方式"
+          ariaLabel={t("tasks.sortAria")}
           size="sm"
-          options={TASK_SORT_OPTIONS}
+          options={sortOptions}
           value={sort}
           onChange={setSort}
         />
@@ -196,23 +231,24 @@ export function TasksPage() {
             tasks={tasks}
             projectNameById={projectNameById}
             onEdit={openEdit}
+            onOpenProject={openProject}
           />
         ) : hasFilters ? (
           <EmptyState
             icon={SearchX}
-            title="没有匹配的任务"
-            description="尝试调整搜索关键词或筛选条件。"
+            title={t("tasks.noMatchTitle")}
+            description={t("tasks.noMatchDescription")}
             action={
               <Button variant="secondary" onClick={clearFilters}>
-                清除筛选
+                {t("common.clearFilter")}
               </Button>
             }
           />
         ) : (
           <EmptyState
             icon={ListPlus}
-            title="还没有任务"
-            description="创建任务来跟踪你的开发计划。"
+            title={t("tasks.emptyTitle")}
+            description={t("tasks.emptyDescription")}
             action={
               <Button
                 variant="primary"
@@ -220,7 +256,7 @@ export function TasksPage() {
                 onClick={openCreate}
                 disabled={!desktopAvailable || projects.length === 0}
               >
-                New Task
+                {t("tasks.new")}
               </Button>
             }
           />

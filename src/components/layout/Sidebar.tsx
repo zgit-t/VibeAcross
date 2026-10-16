@@ -1,8 +1,11 @@
 import { Info, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useApp } from "../../context/AppContext";
+import { useI18n } from "../../i18n";
 import { PRIMARY_NAV, SECONDARY_NAV } from "../../config/navigation";
 import { APP_NAME } from "../../config/app";
+import logo from "../../assets/logo.png";
 import { IconButton } from "../ui/IconButton";
+import { GlobalSearch } from "../../features/search/GlobalSearch";
 import type { NavItem } from "../../config/navigation";
 import styles from "./Sidebar.module.css";
 
@@ -10,21 +13,23 @@ import styles from "./Sidebar.module.css";
 export function Sidebar() {
   const { activeView, navigate, sidebarCollapsed, toggleSidebar, openAbout } =
     useApp();
+  const { t } = useI18n();
 
   function renderItem(item: NavItem) {
     const active = activeView === item.id;
     const Icon = item.icon;
+    const label = t(item.labelKey);
     return (
       <button
         key={item.id}
         type="button"
         className={`${styles.item} ${active ? styles.active : ""}`}
         aria-current={active ? "page" : undefined}
-        title={sidebarCollapsed ? item.label : undefined}
+        title={sidebarCollapsed ? label : undefined}
         onClick={() => navigate(item.id)}
       >
         <Icon size={17} className={styles.itemIcon} aria-hidden="true" />
-        <span className={styles.itemLabel}>{item.label}</span>
+        <span className={styles.itemLabel}>{label}</span>
       </button>
     );
   }
@@ -36,12 +41,20 @@ export function Sidebar() {
       }`}
     >
       <div className={styles.brand}>
-        <span className={styles.mark} aria-hidden="true">
-          VA
-        </span>
+        <img
+          className={styles.mark}
+          src={logo}
+          alt=""
+          aria-hidden="true"
+          draggable={false}
+        />
         <span className={styles.brandText}>{APP_NAME}</span>
         <IconButton
-          label={sidebarCollapsed ? "展开侧边栏" : "折叠侧边栏"}
+          label={
+            sidebarCollapsed
+              ? t("nav.expandSidebar")
+              : t("nav.collapseSidebar")
+          }
           size="sm"
           className={styles.collapseButton}
           onClick={toggleSidebar}
@@ -54,7 +67,11 @@ export function Sidebar() {
         </IconButton>
       </div>
 
-      <nav className={styles.nav} aria-label="主导航">
+      <div className={styles.searchSlot}>
+        <GlobalSearch />
+      </div>
+
+      <nav className={styles.nav} aria-label={t("nav.primary")}>
         {PRIMARY_NAV.map(renderItem)}
       </nav>
 
@@ -63,11 +80,11 @@ export function Sidebar() {
         <button
           type="button"
           className={styles.item}
-          title={sidebarCollapsed ? "About" : undefined}
+          title={sidebarCollapsed ? t("nav.about") : undefined}
           onClick={openAbout}
         >
           <Info size={17} className={styles.itemIcon} aria-hidden="true" />
-          <span className={styles.itemLabel}>About</span>
+          <span className={styles.itemLabel}>{t("nav.about")}</span>
         </button>
       </div>
     </aside>

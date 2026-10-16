@@ -79,6 +79,29 @@
   text-decoration: underline;
 }
 
+.taskLink:disabled {
+  color: var(--color-text-muted);
+  cursor: default;
+  text-decoration: none;
+}
+
+.projectLink {
+  padding: 0;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-accent);
+  background: transparent;
+  border: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.projectLink:hover {
+  text-decoration: underline;
+}
+
 .status {
   display: flex;
   align-items: center;

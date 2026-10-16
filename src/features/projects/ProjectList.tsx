@@ -1,7 +1,9 @@
 import { useMemo } from "react";
 import {
   Clock,
+  Copy,
   FolderGit2,
+  FolderOpen,
   Info,
   Pencil,
   Play,
@@ -13,6 +15,7 @@ import type { Project, ToolEntry } from "../../types/domain";
 import { Badge } from "../../components/ui/Badge";
 import { IconButton } from "../../components/ui/IconButton";
 import { Menu } from "../../components/ui/Menu";
+import { useI18n } from "../../i18n";
 import { formatDateTime, formatRelativeTime } from "../../utils/format";
 import styles from "./ProjectList.module.css";
 
@@ -31,6 +34,10 @@ interface ProjectListProps {
   onRename?: (project: Project) => void;
   onToggleFavorite?: (project: Project) => void;
   onRemove?: (project: Project) => void;
+  /** 在系统文件管理器中打开项目目录。 */
+  onOpenDir?: (project: Project) => void;
+  /** 复制项目路径到剪贴板。 */
+  onCopyPath?: (project: Project) => void;
   /** 设置项目的默认工具（null 表示清除）。 */
   onSetTool?: (project: Project, toolId: string | null) => void;
   /** 使用指定工具启动项目。 */
@@ -48,9 +55,12 @@ export function ProjectList({
   onRename,
   onToggleFavorite,
   onRemove,
+  onOpenDir,
+  onCopyPath,
   onSetTool,
   onLaunch,
 }: ProjectListProps) {
+  const { t } = useI18n();
   // 只有「已确认可受控启动」的工具才出现在行内快速启动中。
   const launchable = useMemo(
     () => (tools ?? []).filter((tool) => tool.launch.support === "supported"),
@@ -65,7 +75,7 @@ export function ProjectList({
     <ul className={styles.list}>
       {projects.map((project) => {
         const options: Array<{ value: string; label: string }> = [
-          { value: "", label: "未选择工具" },
+          { value: "", label: t("projectList.noTool") },
           ...launchable.map((tool) => ({ value: tool.id, label: tool.name })),
         ];
         const knownDefault =
@@ -74,7 +84,7 @@ export function ProjectList({
         if (project.defaultToolId && !knownDefault) {
           options.splice(1, 0, {
             value: project.defaultToolId,
-            label: "（默认工具不可用）",
+            label: t("projectList.defaultUnavailable"),
           });
         }
 
@@ -85,10 +95,10 @@ export function ProjectList({
           Boolean(onLaunch) &&
           launchingId !== project.id;
         const launchHint = !project.pathExists
-          ? "项目目录不可用，无法启动"
+          ? t("projectList.launchNoDir")
           : !knownDefault
-            ? "请先选择一个可用的开发工具"
-            : `启动「${project.name}」`;
+            ? t("projectList.launchPickTool")
+            : t("projectList.launch", { name: project.name });
 
         return (
           <li key={project.id} className={rowClass}>
@@ -101,14 +111,18 @@ export function ProjectList({
               className={styles.main}
               onClick={onSelect ? () => onSelect(project) : undefined}
               disabled={!onSelect}
-              aria-label={onSelect ? `查看项目详情：${project.name}` : undefined}
+              aria-label={
+                onSelect
+                  ? t("projectList.viewDetailAria", { name: project.name })
+                  : undefined
+              }
             >
               <span className={styles.nameRow}>
                 {project.isFavorite && (
                   <Star
                     size={13}
                     className={styles.favoriteStar}
-                    aria-label="已收藏"
+                    aria-label={t("projectList.favorite")}
                   />
                 )}
                 <span className={styles.name}>{project.name}</span>
@@ -117,7 +131,7 @@ export function ProjectList({
                     tone="warning"
                     icon={<Info size={11} aria-hidden="true" />}
                   >
-                    路径不存在
+                    {t("projectList.pathMissing")}
                   </Badge>
                 )}
               </span>
@@ -132,7 +146,9 @@ export function ProjectList({
 
             <span
               className={styles.time}
-              title={`最近访问：${formatDateTime(project.lastOpenedAt)}`}
+              title={t("projectList.lastOpened", {
+                time: formatDateTime(project.lastOpenedAt),
+              })}
             >
               <Clock size={13} aria-hidden="true" />
               {formatRelativeTime(project.lastOpenedAt)}
@@ -147,11 +163,13 @@ export function ProjectList({
                     onSetTool?.(project, event.target.value || null)
                   }
                   disabled={!onSetTool || launchable.length === 0}
-                  aria-label={`为「${project.name}」选择开发工具`}
+                  aria-label={t("projectList.selectToolAria", {
+                    name: project.name,
+                  })}
                   title={
                     launchable.length === 0
-                      ? "尚无可启动的开发工具，请先在 Tools 中检测或添加"
-                      : "选择该项目的默认开发工具"
+                      ? t("projectList.noLaunchableTool")
+                      : t("projectList.selectDefaultTool")
                   }
                 >
                   {options.map((option) => (
@@ -178,22 +196,37 @@ export function ProjectList({
             {showActions && (
               <div className={styles.actions}>
                 <Menu
-                  label={`更多操作：${project.name}`}
+                  label={t("projectList.moreActions", { name: project.name })}
                   items={[
                     {
-                      label: "查看详情",
+                      label: t("projectList.viewDetail"),
                       icon: <Info size={14} aria-hidden="true" />,
                       disabled: !onSelect,
                       onSelect: () => onSelect?.(project),
                     },
                     {
-                      label: "重命名",
+                      label: t("health.openDir"),
+                      icon: <FolderOpen size={14} aria-hidden="true" />,
+                      disabled: !onOpenDir || !project.pathExists,
+                      disabledHint: t("health.openDirUnavailable"),
+                      onSelect: () => onOpenDir?.(project),
+                    },
+                    {
+                      label: t("health.copyPath"),
+                      icon: <Copy size={14} aria-hidden="true" />,
+                      disabled: !onCopyPath,
+                      onSelect: () => onCopyPath?.(project),
+                    },
+                    {
+                      label: t("projectList.rename"),
                       icon: <Pencil size={14} aria-hidden="true" />,
                       disabled: !onRename,
                       onSelect: () => onRename?.(project),
                     },
                     {
-                      label: project.isFavorite ? "取消收藏" : "收藏",
+                      label: project.isFavorite
+                        ? t("projectList.unfavorite")
+                        : t("projectList.favoriteAction"),
                       icon: project.isFavorite ? (
                         <StarOff size={14} aria-hidden="true" />
                       ) : (
@@ -203,11 +236,11 @@ export function ProjectList({
                       onSelect: () => onToggleFavorite?.(project),
                     },
                     {
-                      label: "移除项目",
+                      label: t("projectList.removeProject"),
                       icon: <Trash2 size={14} aria-hidden="true" />,
                       danger: true,
                       disabled: !onRemove,
-                      disabledHint: "无法移除",
+                      disabledHint: t("projectList.cannotRemove"),
                       onSelect: () => onRemove?.(project),
                     },
                   ]}

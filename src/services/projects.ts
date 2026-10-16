@@ -6,7 +6,12 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import type { LaunchResult, Project, ProjectSort } from "../types/domain";
+import type {
+  LaunchResult,
+  Project,
+  ProjectHealth,
+  ProjectSort,
+} from "../types/domain";
 
 export interface CreateProjectInput {
   name: string;
@@ -80,4 +85,23 @@ export function launchProject(
   toolId: string | null,
 ): Promise<LaunchResult> {
   return invoke<LaunchResult>("launch_project", { projectId: id, toolId });
+}
+
+/**
+ * 按需检查项目健康状态。
+ * `revalidate` 为 true 时先重新校验默认工具路径（不触发全量自动检测）。
+ */
+export function checkProjectHealth(
+  id: string,
+  revalidate = false,
+): Promise<ProjectHealth> {
+  return invoke<ProjectHealth>("check_project_health", {
+    projectId: id,
+    revalidate,
+  });
+}
+
+/** 在系统文件管理器中打开项目目录（后端按项目 id 读取并校验路径）。 */
+export function openProjectDir(id: string): Promise<void> {
+  return invoke<void>("open_project_dir", { id });
 }

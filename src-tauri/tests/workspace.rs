@@ -96,6 +96,10 @@ impl Detector for StubDetector {
         Vec::new()
     }
 
+    fn app_path(&self, _exe_name: &str) -> Option<PathBuf> {
+        None
+    }
+
     fn query_version(&self, _executable: &Path, _args: &[&str]) -> VersionOutcome {
         VersionOutcome::Unsupported
     }
@@ -648,4 +652,28 @@ fn restore_capability_is_reported_per_tool() {
     let workbuddy = by_id(&wb_id);
     assert_eq!(workbuddy.restore.level, RestoreLevel::None);
     assert_eq!(workbuddy.restore.session, SessionResumeSupport::Unsupported);
+}
+
+#[test]
+fn delete_session_removes_only_that_record() {
+    let workspace = tempfile::tempdir().unwrap();
+    let project_dir = workspace.path().join("proj");
+    std::fs::create_dir(&project_dir).unwrap();
+    let db = memory_db();
+    let conn = db.conn().unwrap();
+    let detector = StubDetector::new();
+    let project_id = import_project(&conn, &project_dir);
+
+    let first = workspace::create_session(&conn, &detector, session_input(&project_id)).unwrap();
+    let second = workspace::create_session(&conn, &detector, session_input(&project_id)).unwrap();
+
+    workspace::delete_session(&conn, &first.id).unwrap();
+    assert!(workspace::get_session(&conn, &first.id).is_err());
+
+    let remaining = workspace::get_session(&conn, &second.id).unwrap();
+    assert_eq!(remaining.project_id, project_id);
+
+    // 再次删除同一条记录应报「未找到」，不会影响其它记录。
+    let missing = workspace::delete_session(&conn, &first.id).unwrap_err();
+    assert_eq!(missing.code, "WORKSPACE_NOT_FOUND");
 }

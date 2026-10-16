@@ -3,7 +3,6 @@ import {
   CheckCircle2,
   CircleDashed,
   FolderPlus,
-  History,
   ListPlus,
   LoaderCircle,
   Play,
@@ -15,8 +14,8 @@ import { useApp } from "../context/AppContext";
 import { useProjects } from "../context/ProjectsContext";
 import { useTools } from "../context/ToolsContext";
 import { useTaskStats } from "../context/TasksContext";
-import { useActivityFeed } from "../context/ActivityContext";
 import { useWorkspace } from "../context/WorkspaceContext";
+import { useI18n } from "../i18n";
 import { PageHeader } from "../components/layout/PageHeader";
 import { Section } from "../components/layout/Section";
 import { Button } from "../components/ui/Button";
@@ -25,16 +24,8 @@ import { Badge } from "../components/ui/Badge";
 import { Notice } from "../components/ui/Notice";
 import { ProjectList } from "../features/projects/ProjectList";
 import { AddProjectDialog } from "../features/projects/AddProjectDialog";
-import { ActivityList } from "../features/activity/ActivityList";
-import {
-  getStatusLabel,
-  getStatusTone,
-} from "../features/tools/data";
-import {
-  RESTORE_LEVEL_LABEL,
-  RESTORE_LEVEL_TONE,
-  sessionName,
-} from "../features/workspace/meta";
+import { TOOL_STATUS_KEY, getStatusTone } from "../features/tools/data";
+import { RESTORE_LEVEL_KEY, RESTORE_LEVEL_TONE, sessionName } from "../features/workspace/meta";
 import { toErrorMessage } from "../services/backend";
 import { formatRelativeTime } from "../utils/format";
 import type { Project } from "../types/domain";
@@ -56,11 +47,11 @@ function compareRecent(a: Project, b: Project): number {
 
 /** 默认页面：本地开发工作区概览。 */
 export function OverviewPage() {
-  const { navigate, showLastContextOnStartup } = useApp();
+  const { navigate, openProject, showLastContextOnStartup } = useApp();
   const { projects } = useProjects();
   const { tools } = useTools();
+  const { t } = useI18n();
   const stats = useTaskStats();
-  const recentActivity = useActivityFeed({}, 5).items;
   const {
     lastSession,
     autoRestore,
@@ -78,7 +69,7 @@ export function OverviewPage() {
     try {
       await restoreSession(id);
     } catch (cause) {
-      setResumeError(toErrorMessage(cause, "恢复工作环境失败。"));
+      setResumeError(toErrorMessage(cause, t("overview.resume.error")));
     } finally {
       setResumeBusy(false);
     }
@@ -98,8 +89,8 @@ export function OverviewPage() {
   return (
     <div className={styles.page}>
       <PageHeader
-        title="Overview"
-        description="Your development workspace at a glance."
+        title={t("overview.title")}
+        description={t("overview.description")}
       />
 
       {autoRestore.state !== "idle" && (
@@ -113,107 +104,117 @@ export function OverviewPage() {
           }
           title={
             autoRestore.state === "running"
-              ? "正在自动恢复"
+              ? t("overview.autoRestore.running")
               : autoRestore.state === "success"
-                ? "已自动恢复"
-                : "自动恢复失败"
+                ? t("overview.autoRestore.success")
+                : t("overview.autoRestore.failed")
           }
         >
           <div className={styles.bannerBody}>
             <span>
-              {autoRestore.message ??
-                "正在自动恢复上次的工作上下文…"}
+              {autoRestore.message ?? t("overview.autoRestore.defaultMessage")}
             </span>
             <Button variant="ghost" size="sm" onClick={dismissAutoRestore}>
-              知道了
+              {t("common.gotIt")}
             </Button>
           </div>
         </Notice>
       )}
 
-      <Section
-        title="Resume Work"
-        description="恢复最近一次的工作环境（项目 + 开发工具）。"
-        action={
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => navigate("sessions")}
-          >
-            All Sessions
-          </Button>
-        }
-      >
-        {lastSession ? (
-          <div className={styles.resume}>
-            <div className={styles.resumeMain}>
-              <div className={styles.resumeTitleRow}>
-                <span className={styles.resumeTitle}>
-                  {sessionName(lastSession)}
-                </span>
-                <Badge tone={RESTORE_LEVEL_TONE[lastSession.restoreLevel]}>
-                  {RESTORE_LEVEL_LABEL[lastSession.restoreLevel]}
-                </Badge>
-                {showLastContextOnStartup && (
-                  <Badge tone="accent">启动时显示</Badge>
-                )}
-              </div>
-              <div className={styles.resumeMeta}>
-                <span>{lastSession.projectName ?? "项目已删除"}</span>
-                <span aria-hidden="true">·</span>
-                <span>{lastSession.toolName ?? "未指定工具"}</span>
-                {lastSession.taskTitle && (
-                  <>
-                    <span aria-hidden="true">·</span>
-                    <span>任务：{lastSession.taskTitle}</span>
-                  </>
-                )}
-                <span aria-hidden="true">·</span>
-                <span>最近使用 {formatRelativeTime(lastSession.lastUsedAt)}</span>
-              </div>
-              {lastSession.lastRestoreStatus === "failed" &&
-                lastSession.lastRestoreError && (
-                  <p className={styles.resumeError}>
-                    上次恢复失败：{lastSession.lastRestoreError}
-                  </p>
-                )}
-            </div>
+      {showLastContextOnStartup && (
+        <Section
+          title={t("overview.resume.title")}
+          description={t("overview.resume.description")}
+          action={
             <Button
-              variant="primary"
-              icon={<Play size={15} aria-hidden="true" />}
-              disabled={resumeBusy || !desktopAvailable}
-              onClick={() => void handleResume(lastSession.id)}
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate("sessions")}
             >
-              {resumeBusy ? "恢复中…" : "恢复"}
+              {t("overview.resume.allSessions")}
             </Button>
-          </div>
-        ) : (
-          <EmptyState
-            compact
-            icon={RotateCcw}
-            title="还没有工作上下文"
-            description="在 Sessions 页面保存一个「项目 + 工具 + 任务」组合，即可一键恢复工作环境。"
-            action={
+          }
+        >
+          {lastSession ? (
+            <div className={styles.resume}>
+              <div className={styles.resumeMain}>
+                <div className={styles.resumeTitleRow}>
+                  <span className={styles.resumeTitle}>
+                    {sessionName(lastSession)}
+                  </span>
+                  <Badge tone={RESTORE_LEVEL_TONE[lastSession.restoreLevel]}>
+                    {t(RESTORE_LEVEL_KEY[lastSession.restoreLevel])}
+                  </Badge>
+                </div>
+                <div className={styles.resumeMeta}>
+                  <span>
+                    {lastSession.projectName ?? t("overview.resume.projectDeleted")}
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  <span>{lastSession.toolName ?? t("overview.resume.noTool")}</span>
+                  {lastSession.taskTitle && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span>
+                        {t("overview.resume.task", { title: lastSession.taskTitle })}
+                      </span>
+                    </>
+                  )}
+                  <span aria-hidden="true">·</span>
+                  <span>
+                    {t("overview.resume.lastUsed", {
+                      time: formatRelativeTime(lastSession.lastUsedAt),
+                    })}
+                  </span>
+                </div>
+                {lastSession.lastRestoreStatus === "failed" &&
+                  lastSession.lastRestoreError && (
+                    <p className={styles.resumeError}>
+                      {t("overview.resume.lastFailed", {
+                        reason: lastSession.lastRestoreError,
+                      })}
+                    </p>
+                  )}
+              </div>
               <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => navigate("sessions")}
+                variant="primary"
+                icon={<Play size={15} aria-hidden="true" />}
+                disabled={resumeBusy || !desktopAvailable}
+                onClick={() => void handleResume(lastSession.id)}
               >
-                前往 Sessions
+                {resumeBusy
+                  ? t("overview.resume.restoring")
+                  : t("overview.resume.restore")}
               </Button>
-            }
-          />
-        )}
-        {resumeError && (
-          <div className={styles.resumeNotice}>
-            <Notice tone="danger">{resumeError}</Notice>
-          </div>
-        )}
-      </Section>
+            </div>
+          ) : (
+            <EmptyState
+              compact
+              icon={RotateCcw}
+              title={t("overview.resume.emptyTitle")}
+              description={t("overview.resume.emptyDescription")}
+              action={
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => navigate("sessions")}
+                >
+                  {t("overview.resume.goSessions")}
+                </Button>
+              }
+            />
+          )}
+          {resumeError && (
+            <div className={styles.resumeNotice}>
+              <Notice tone="danger">{resumeError}</Notice>
+            </div>
+          )}
+        </Section>
+      )}
 
       <Section
-        title="Recent Projects"
-        description="最近访问的本地项目。"
+        title={t("overview.recentProjects.title")}
+        description={t("overview.recentProjects.description")}
         action={
           <>
             <Button
@@ -221,7 +222,7 @@ export function OverviewPage() {
               size="sm"
               onClick={() => navigate("projects")}
             >
-              All Projects
+              {t("overview.recentProjects.allProjects")}
             </Button>
             <Button
               variant="primary"
@@ -229,25 +230,28 @@ export function OverviewPage() {
               icon={<Plus size={15} aria-hidden="true" />}
               onClick={() => setAddOpen(true)}
             >
-              Add Project
+              {t("overview.recentProjects.addProject")}
             </Button>
           </>
         }
       >
         {recentProjects.length > 0 ? (
-          <ProjectList projects={recentProjects} />
+          <ProjectList
+            projects={recentProjects}
+            onSelect={(project) => openProject(project.id)}
+          />
         ) : (
           <EmptyState
             icon={FolderPlus}
-            title="还没有项目"
-            description="创建一个新的项目目录，或导入一个已存在的本地目录。"
+            title={t("overview.recentProjects.emptyTitle")}
+            description={t("overview.recentProjects.emptyDescription")}
             action={
               <Button
                 variant="primary"
                 icon={<Plus size={15} aria-hidden="true" />}
                 onClick={() => setAddOpen(true)}
               >
-                Add Project
+                {t("overview.recentProjects.addProject")}
               </Button>
             }
           />
@@ -255,11 +259,11 @@ export function OverviewPage() {
       </Section>
 
       <Section
-        title="Tasks"
-        description="任务状态概览。"
+        title={t("overview.tasks.title")}
+        description={t("overview.tasks.description")}
         action={
           <Button variant="ghost" size="sm" onClick={() => navigate("tasks")}>
-            All Tasks
+            {t("overview.tasks.allTasks")}
           </Button>
         }
       >
@@ -274,7 +278,7 @@ export function OverviewPage() {
                 <CircleDashed size={16} />
               </span>
               <span className={styles.taskCount}>{stats.todo}</span>
-              <span className={styles.taskLabel}>待办</span>
+              <span className={styles.taskLabel}>{t("taskStatus.todo")}</span>
             </button>
             <button
               type="button"
@@ -288,7 +292,7 @@ export function OverviewPage() {
                 <LoaderCircle size={16} />
               </span>
               <span className={styles.taskCount}>{stats.inProgress}</span>
-              <span className={styles.taskLabel}>进行中</span>
+              <span className={styles.taskLabel}>{t("taskStatus.inProgress")}</span>
             </button>
             <button
               type="button"
@@ -299,22 +303,22 @@ export function OverviewPage() {
                 <CheckCircle2 size={16} />
               </span>
               <span className={styles.taskCount}>{stats.done}</span>
-              <span className={styles.taskLabel}>已完成</span>
+              <span className={styles.taskLabel}>{t("taskStatus.done")}</span>
             </button>
           </div>
         ) : (
           <EmptyState
             compact
             icon={ListPlus}
-            title="暂无任务"
-            description="创建任务来跟踪开发进度。"
+            title={t("overview.tasks.emptyTitle")}
+            description={t("overview.tasks.emptyDescription")}
             action={
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={() => navigate("tasks")}
               >
-                前往 Tasks
+                {t("overview.tasks.goTasks")}
               </Button>
             }
           />
@@ -323,11 +327,11 @@ export function OverviewPage() {
 
       <div className={styles.grid}>
         <Section
-          title="Development Tools"
-          description="已检测到工具的概览入口。"
+          title={t("overview.tools.title")}
+          description={t("overview.tools.description")}
           action={
             <Button variant="ghost" size="sm" onClick={() => navigate("tools")}>
-              Manage
+              {t("overview.tools.manage")}
             </Button>
           }
         >
@@ -346,7 +350,7 @@ export function OverviewPage() {
                     <span className={styles.toolMain}>
                       <span className={styles.toolName}>
                         {tool.name}
-                        {tool.isDefault && " · 默认"}
+                        {tool.isDefault && t("overview.tools.defaultSuffix")}
                       </span>
                       <span className={styles.toolVendor}>
                         {tool.version ?? tool.vendor}
@@ -356,7 +360,7 @@ export function OverviewPage() {
                       tone={getStatusTone(tool.status)}
                       icon={<CheckCircle2 size={11} aria-hidden="true" />}
                     >
-                      {getStatusLabel(tool.status)}
+                      {t(TOOL_STATUS_KEY[tool.status])}
                     </Badge>
                   </button>
                 </li>
@@ -366,42 +370,17 @@ export function OverviewPage() {
             <EmptyState
               compact
               icon={CircleDashed}
-              title="尚未检测到工具"
-              description="前往 Tools 页面检测本机已安装的 AI 编程工具，或手动添加。"
+              title={t("overview.tools.emptyTitle")}
+              description={t("overview.tools.emptyDescription")}
               action={
                 <Button
                   variant="secondary"
                   size="sm"
                   onClick={() => navigate("tools")}
                 >
-                  前往 Tools
+                  {t("overview.tools.goTools")}
                 </Button>
               }
-            />
-          )}
-        </Section>
-
-        <Section
-          title="Recent Activity"
-          description="工作区内的最近操作。"
-          action={
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate("activity")}
-            >
-              View all
-            </Button>
-          }
-        >
-          {recentActivity.length > 0 ? (
-            <ActivityList items={recentActivity} />
-          ) : (
-            <EmptyState
-              compact
-              icon={History}
-              title="暂无活动记录"
-              description="打开项目、启动工具或创建任务后，记录会显示在这里。"
             />
           )}
         </Section>

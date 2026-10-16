@@ -6,14 +6,15 @@ import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { IconButton } from "../../components/ui/IconButton";
 import { useApp } from "../../context/AppContext";
 import { useWorkspace } from "../../context/WorkspaceContext";
+import { useI18n } from "../../i18n";
 import { toErrorMessage } from "../../services/backend";
 import { formatDateTime, formatRelativeTime } from "../../utils/format";
 import type { ToolEntry, WorkspaceSession } from "../../types/domain";
 import {
   getSessionState,
-  RESTORE_LEVEL_LABEL,
+  RESTORE_LEVEL_KEY,
   RESTORE_LEVEL_TONE,
-  RESTORE_STATUS_LABEL,
+  RESTORE_STATUS_KEY,
   restorableTools,
   sessionName,
 } from "./meta";
@@ -38,7 +39,8 @@ export function SessionList({
   onEdit,
 }: SessionListProps) {
   const { restoreSession, deleteSession } = useWorkspace();
-  const { navigate } = useApp();
+  const { openProject, openTask } = useApp();
+  const { t } = useI18n();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [toolChoice, setToolChoice] = useState<Record<string, string>>({});
   const [pendingDelete, setPendingDelete] = useState<WorkspaceSession | null>(
@@ -56,7 +58,7 @@ export function SessionList({
       const toolId = (chosen ?? session.toolId ?? "") || null;
       await restoreSession(session.id, toolId);
     } catch (cause) {
-      setError(toErrorMessage(cause, "恢复工作上下文失败。"));
+      setError(toErrorMessage(cause, t("sessionList.restoreFailed")));
     } finally {
       setPendingId(null);
     }
@@ -72,7 +74,7 @@ export function SessionList({
       await deleteSession(pendingDelete.id);
       setPendingDelete(null);
     } catch (cause) {
-      setError(toErrorMessage(cause, "删除工作上下文失败。"));
+      setError(toErrorMessage(cause, t("sessionList.deleteFailed")));
     } finally {
       setPendingId(null);
     }
@@ -97,20 +99,33 @@ export function SessionList({
                 <div className={styles.titleRow}>
                   <span className={styles.title}>{sessionName(session)}</span>
                   <Badge tone={RESTORE_LEVEL_TONE[session.restoreLevel]}>
-                    {RESTORE_LEVEL_LABEL[session.restoreLevel]}
+                    {t(RESTORE_LEVEL_KEY[session.restoreLevel])}
                   </Badge>
-                  <Badge tone={state.tone}>{state.label}</Badge>
+                  <Badge tone={state.tone}>{t(state.labelKey)}</Badge>
                 </div>
 
                 <div className={styles.meta}>
-                  <span className={styles.project}>
-                    {session.projectName ?? "项目已删除"}
-                  </span>
+                  {session.projectName ? (
+                    <button
+                      type="button"
+                      className={styles.projectLink}
+                      onClick={() => openProject(session.projectId)}
+                      title={t("sessionList.openProject", {
+                        name: session.projectName,
+                      })}
+                    >
+                      {session.projectName}
+                    </button>
+                  ) : (
+                    <span className={styles.project}>
+                      {t("sessionList.projectDeleted")}
+                    </span>
+                  )}
                   <span className={styles.dot} aria-hidden="true">
                     ·
                   </span>
                   <span className={styles.tool}>
-                    {session.toolName ?? "未指定工具"}
+                    {session.toolName ?? t("sessionList.noTool")}
                   </span>
                   {session.taskTitle && (
                     <>
@@ -120,8 +135,13 @@ export function SessionList({
                       <button
                         type="button"
                         className={styles.taskLink}
-                        onClick={() => navigate("tasks")}
-                        title="在 Tasks 中查看"
+                        onClick={() => {
+                          if (session.taskId) {
+                            openTask(session.taskId);
+                          }
+                        }}
+                        disabled={!session.taskId}
+                        title={t("sessionList.viewInTasks")}
                       >
                         {session.taskTitle}
                       </button>
@@ -131,7 +151,9 @@ export function SessionList({
 
                 <div className={styles.status}>
                   <span>
-                    最近使用 {formatRelativeTime(session.lastUsedAt)}
+                    {t("sessionList.lastUsed", {
+                      time: formatRelativeTime(session.lastUsedAt),
+                    })}
                     <span className={styles.tooltip}>
                       （{formatDateTime(session.lastUsedAt)}）
                     </span>
@@ -144,7 +166,7 @@ export function SessionList({
                           : styles.statusOk
                       }
                     >
-                      {RESTORE_STATUS_LABEL[session.lastRestoreStatus]}
+                      {t(RESTORE_STATUS_KEY[session.lastRestoreStatus])}
                       {session.lastRestoreError
                         ? `：${session.lastRestoreError}`
                         : ""}
@@ -153,18 +175,20 @@ export function SessionList({
                 </div>
 
                 {!state.canRestore && (
-                  <p className={styles.hint}>{state.detail}</p>
+                  <p className={styles.hint}>{t(state.detailKey)}</p>
                 )}
               </div>
 
               <div className={styles.controls}>
                 {options.length > 1 && (
                   <label className={styles.toolSelect}>
-                    <span className={styles.toolSelectLabel}>恢复时使用</span>
+                    <span className={styles.toolSelectLabel}>
+                      {t("sessionList.restoreWith")}
+                    </span>
                     <select
                       value={selectedTool}
                       disabled={busy}
-                      aria-label="恢复时使用的工具"
+                      aria-label={t("sessionList.restoreWithAria")}
                       onChange={(event) =>
                         setToolChoice((prev) => ({
                           ...prev,
@@ -172,7 +196,7 @@ export function SessionList({
                         }))
                       }
                     >
-                      <option value="">按记录选择</option>
+                      <option value="">{t("sessionList.byRecord")}</option>
                       {options.map((option) => (
                         <option key={option.id} value={option.id}>
                           {option.name}
@@ -187,15 +211,15 @@ export function SessionList({
                   icon={<Play size={14} aria-hidden="true" />}
                   disabled={busy || !state.canRestore}
                   onClick={() => void handleRestore(session)}
-                  title={state.canRestore ? undefined : state.detail}
+                  title={state.canRestore ? undefined : t(state.detailKey)}
                 >
-                  {busy ? "恢复中…" : "恢复"}
+                  {busy ? t("sessionList.restoring") : t("sessionList.restore")}
                 </Button>
               </div>
 
               <div className={styles.actions}>
                 <IconButton
-                  label="编辑工作上下文"
+                  label={t("sessionList.edit")}
                   size="sm"
                   onClick={() => onEdit(session)}
                   disabled={busy}
@@ -203,7 +227,7 @@ export function SessionList({
                   <Pencil size={14} aria-hidden="true" />
                 </IconButton>
                 <IconButton
-                  label="删除工作上下文"
+                  label={t("sessionList.delete")}
                   size="sm"
                   className={styles.dangerIcon}
                   onClick={() => setPendingDelete(session)}
@@ -219,13 +243,15 @@ export function SessionList({
 
       <ConfirmDialog
         open={pendingDelete !== null}
-        title="删除工作上下文？"
+        title={t("sessionList.confirmDeleteTitle")}
         description={
           pendingDelete
-            ? `将删除「${sessionName(pendingDelete)}」这条恢复记录，不会删除项目目录、任务或工具中的任何数据。`
+            ? t("sessionList.confirmDeleteDescription", {
+                name: sessionName(pendingDelete),
+              })
             : undefined
         }
-        confirmLabel="删除"
+        confirmLabel={t("common.delete")}
         tone="danger"
         busy={pendingId !== null}
         onConfirm={handleDelete}

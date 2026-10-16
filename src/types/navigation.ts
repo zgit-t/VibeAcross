@@ -5,7 +5,6 @@ export type ViewId =
   | "tools"
   | "tasks"
   | "sessions"
-  | "activity"
   | "settings";
 
 /** 主题模式：跟随系统或显式指定。 */

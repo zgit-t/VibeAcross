@@ -11,15 +11,12 @@
 }
 
 .mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
+  display: block;
+  flex-shrink: 0;
   height: 40px;
-  border-radius: var(--radius-md);
-  background: var(--color-accent);
-  color: var(--color-accent-contrast);
-  font-weight: 700;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
 }
 
 .name {

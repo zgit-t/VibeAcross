@@ -154,7 +154,7 @@ fn set_task_status_is_idempotent() {
     let project_id = make_project(&conn, &workspace, "P1");
     let task = tasks::create_task(&conn, input(&project_id, "任务")).unwrap();
 
-    // 重复设置相同状态不应改写记录（也避免产生多余的活动记录）。
+    // 重复设置相同状态不应改写记录（也不应更新 updated_at）。
     let same = tasks::set_task_status(&conn, &task.id, TaskStatus::Todo).unwrap();
     assert_eq!(same.updated_at, task.updated_at);
 

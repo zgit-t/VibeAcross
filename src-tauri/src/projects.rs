@@ -12,10 +12,10 @@ const RESERVED_NAMES: &[&str] = &[
     "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 ];
 
-const SELECT_COLUMNS: &str = "id, name, path, created_at, updated_at, last_opened_at, \
+pub(crate) const SELECT_COLUMNS: &str = "id, name, path, created_at, updated_at, last_opened_at, \
      description, is_favorite, default_tool_id";
 
-fn row_to_project(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
+pub(crate) fn row_to_project(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
     let path: String = row.get("path")?;
     Ok(Project {
         path_exists: Path::new(&path).is_dir(),
@@ -334,7 +334,7 @@ pub fn touch_opened(conn: &Connection, id: &str) -> Result<Project, AppError> {
 /// 仅移除数据库中的登记记录，不删除磁盘目录。
 ///
 /// 同时删除该项目关联的任务与工作上下文记录（在同一事务内），避免留下不可访问的
-/// 孤立数据。活动记录不在此删除：它们保留 `project_id`，即使项目已删除也能继续展示。
+/// 孤立数据。
 pub fn remove_project(conn: &Connection, id: &str) -> Result<(), AppError> {
     let tx = conn.unchecked_transaction()?;
     tx.execute("DELETE FROM tasks WHERE project_id = ?1", [id])?;

@@ -67,6 +67,11 @@ export interface LaunchResult {
   method: LaunchMethod;
   workingDir: string;
   arguments: string[];
+  /**
+   * 本次启动是否同时在目标工具中创建 / 恢复了任务或会话上下文。
+   * 当前版本恒为 false：只创建进程并定位工作目录，不传递任何会话参数。
+   */
+  contextInitialized: boolean;
 }
 
 /** 开发工具条目。字段与 Rust 后端 `tools::model::ToolEntry` 序列化结果一致。 */
@@ -141,6 +146,34 @@ export interface Project {
 /** 项目列表排序方式。 */
 export type ProjectSort = "recent" | "created" | "name";
 
+/** 项目路径健康状态。与 Rust 后端 `health::PathStatus` 一致。 */
+export type ProjectPathStatus =
+  | "ok"
+  | "missing"
+  | "notDirectory"
+  | "inaccessible"
+  | "unknown";
+
+/** 默认工具的启动能力分类。与 Rust 后端 `health::ToolHealthStatus` 一致。 */
+export type ProjectToolHealth =
+  | "notConfigured"
+  | "missing"
+  | "unavailable"
+  | "notLaunchable"
+  | "ready";
+
+/**
+ * 单个项目的健康检查结果（项目路径健康与默认工具启动能力分开返回）。
+ * 与 Rust 后端 `health::ProjectHealth` 一致。
+ */
+export interface ProjectHealth {
+  projectId: string;
+  pathStatus: ProjectPathStatus;
+  toolStatus: ProjectToolHealth;
+  /** 项目关联的默认工具安装 id；未设置时为 null。 */
+  toolId: string | null;
+}
+
 /** 应用设置。与 Rust 后端 `models::AppSettings` 对应。 */
 export interface AppSettings {
   defaultProjectFolder: string | null;
@@ -149,6 +182,8 @@ export interface AppSettings {
   showLastContextOnStartup: boolean;
   /** 启动时是否自动恢复最近的工作上下文（Phase 7）。 */
   autoRestoreLastContext: boolean;
+  /** 界面语言（如 zh-CN / en-US）；未设置时为 null，由前端回退到默认语言。 */
+  language: string | null;
 }
 
 /** 本地数据存储信息。 */
@@ -212,38 +247,26 @@ export interface TaskStats {
   total: number;
 }
 
-/** 活动分类。与 Rust 后端 `activity::ActivityType` 一致。 */
-export type ActivityType = "Project" | "Tool" | "Task" | "System";
-
-/** 一条应用内活动记录。字段与 Rust 后端 `activity::ActivityLog` 一致。 */
-export interface ActivityLog {
-  id: string;
-  /** 相关项目 id；与项目无关时为 null。 */
-  projectId: string | null;
-  eventType: ActivityType;
-  /** 面向用户的操作摘要，不含敏感信息。 */
-  summary: string;
-  createdAt: string;
-  /** 相关项目名称；项目已删除时为 null。 */
-  projectName: string | null;
+/**
+ * 任务搜索结果：任务本体 + 所属项目信息（用于展示与导航）。
+ * 与 Rust 后端 `search::TaskSearchResult` 一致。
+ */
+export interface TaskSearchResult {
+  task: Task;
+  projectName: string;
+  projectPathExists: boolean;
 }
 
-/** 活动查询条件。 */
-export interface ActivityFilter {
-  projectId?: string | null;
-  eventType?: ActivityType | null;
-  /** 返回条数上限，缺省 50。 */
-  limit?: number;
-  /** 偏移量，用于分批加载。 */
-  offset?: number;
-  /** 仅返回此时间（ISO 8601）之后的记录。 */
-  since?: string | null;
-}
-
-/** 活动分页结果。 */
-export interface ActivityPage {
-  items: ActivityLog[];
-  total: number;
+/**
+ * 全局搜索结果，按类型分组。已删除 / 无效关联的记录不会出现在结果中。
+ * 与 Rust 后端 `search::SearchResults` 一致。
+ */
+export interface SearchResults {
+  /** 归一化后的查询词。 */
+  query: string;
+  projects: Project[];
+  tasks: TaskSearchResult[];
+  sessions: WorkspaceSession[];
 }
 
 /** 上一次恢复结果。与 Rust 后端 `workspace::RestoreStatus` 一致。 */
@@ -287,5 +310,33 @@ export interface WorkspaceSessionInput {
 export interface RestoreOutcome {
   session: WorkspaceSession;
   launch: LaunchResult;
+}
+
+/** 备份中记录的数据规模。与 Rust 后端 `backup::BackupCounts` 一致。 */
+export interface BackupCounts {
+  projects: number;
+  tasks: number;
+  toolInstallations: number;
+  workspaceSessions: number;
+  settings: number;
+}
+
+/** 备份文件（或刚创建的备份）的描述。 */
+export interface BackupInfo {
+  path: string;
+  fileName: string;
+  sizeBytes: number;
+  createdAt: string;
+  schemaVersion: number;
+  counts: BackupCounts;
+}
+
+/** 恢复操作的结果。 */
+export interface BackupRestoreResult {
+  sourcePath: string;
+  /** 恢复前为当前数据创建的保护性备份路径，可用于手动回退。 */
+  protectiveBackupPath: string;
+  schemaVersion: number;
+  counts: BackupCounts;
 }
 

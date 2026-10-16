@@ -14,6 +14,28 @@
   color: var(--color-danger);
 }
 
+/*
+ * 控制行：输入框与右侧附属控件（如「浏览」按钮）同一行。
+ * 附属控件与输入框天然对齐，不受上方标签或下方提示 / 错误影响。
+ */
+.controlRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.controlRow > .control {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
+.trailing {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
 .control {
   width: 100%;
   height: 34px;

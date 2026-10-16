@@ -1,3 +1,5 @@
+import type { TranslationKey } from "../../i18n";
+import { t } from "../../i18n/translate";
 import type {
   RestoreLevel,
   RestoreStatus,
@@ -9,12 +11,12 @@ import type {
 /** 徽标色调，与 `components/ui/Badge` 保持一致。 */
 export type WorkspaceTone = "neutral" | "accent" | "success" | "warning" | "danger";
 
-/** 恢复层级 → 中文标签。 */
-export const RESTORE_LEVEL_LABEL: Record<RestoreLevel, string> = {
-  none: "不支持恢复",
-  project: "项目恢复 · Level 1",
-  session: "会话恢复 · Level 2",
-  fullContext: "完整上下文 · Level 3",
+/** 恢复层级 → 翻译键。 */
+export const RESTORE_LEVEL_KEY: Record<RestoreLevel, TranslationKey> = {
+  none: "restoreLevel.none",
+  project: "restoreLevel.project",
+  session: "restoreLevel.session",
+  fullContext: "restoreLevel.fullContext",
 };
 
 /** 恢复层级 → 徽标色调。 */
@@ -25,16 +27,16 @@ export const RESTORE_LEVEL_TONE: Record<RestoreLevel, WorkspaceTone> = {
   fullContext: "warning",
 };
 
-/** 上次恢复结果 → 中文标签。 */
-export const RESTORE_STATUS_LABEL: Record<RestoreStatus, string> = {
-  success: "上次恢复成功",
-  failed: "上次恢复失败",
+/** 上次恢复结果 → 翻译键。 */
+export const RESTORE_STATUS_KEY: Record<RestoreStatus, TranslationKey> = {
+  success: "restoreStatus.success",
+  failed: "restoreStatus.failed",
 };
 
-/** 会话恢复支持情况 → 中文标签。 */
-export const SESSION_RESUME_LABEL: Record<SessionResumeSupport, string> = {
-  unsupported: "不支持会话恢复",
-  documentedUnverified: "有官方机制 · 尚未验证",
+/** 会话恢复支持情况 → 翻译键。 */
+export const SESSION_RESUME_KEY: Record<SessionResumeSupport, TranslationKey> = {
+  unsupported: "sessionResume.unsupported",
+  documentedUnverified: "sessionResume.documentedUnverified",
 };
 
 /** 会话恢复支持情况 → 徽标色调。 */
@@ -54,50 +56,50 @@ export type SessionStateId =
 
 export interface SessionState {
   id: SessionStateId;
-  label: string;
+  labelKey: TranslationKey;
   tone: WorkspaceTone;
   /** 是否可以点击「恢复」。 */
   canRestore: boolean;
-  /** 面向用户的简短说明。 */
-  detail: string;
+  /** 面向用户的简短说明的翻译键。 */
+  detailKey: TranslationKey;
 }
 
 const STATE_META: Record<SessionStateId, Omit<SessionState, "id">> = {
   ready: {
-    label: "可恢复",
+    labelKey: "sessionState.ready.label",
     tone: "success",
     canRestore: true,
-    detail: "项目目录与开发工具均可用。",
+    detailKey: "sessionState.ready.detail",
   },
   projectMissing: {
-    label: "项目目录不存在",
+    labelKey: "sessionState.projectMissing.label",
     tone: "danger",
     canRestore: false,
-    detail: "项目目录已被移动或删除，请在 Projects 页面重新定位后再恢复。",
+    detailKey: "sessionState.projectMissing.detail",
   },
   toolUnavailable: {
-    label: "工具不可用",
+    labelKey: "sessionState.toolUnavailable.label",
     tone: "warning",
     canRestore: false,
-    detail: "所选开发工具未安装或路径失效，请在 Tools 页面重新配置。",
+    detailKey: "sessionState.toolUnavailable.detail",
   },
   needsConfiguration: {
-    label: "需要补充配置",
+    labelKey: "sessionState.needsConfiguration.label",
     tone: "warning",
     canRestore: false,
-    detail: "尚未选定可用的开发工具，请先选择工具再进行恢复。",
+    detailKey: "sessionState.needsConfiguration.detail",
   },
   unsupported: {
-    label: "当前工具不支持",
+    labelKey: "sessionState.unsupported.label",
     tone: "warning",
     canRestore: false,
-    detail: "所选工具不支持受控启动，可改用其他工具恢复该项目。",
+    detailKey: "sessionState.unsupported.detail",
   },
   restoreFailed: {
-    label: "上次恢复失败",
+    labelKey: "sessionState.restoreFailed.label",
     tone: "danger",
     canRestore: true,
-    detail: "上次恢复未成功，可在修复后重试。",
+    detailKey: "sessionState.restoreFailed.detail",
   },
 };
 
@@ -135,7 +137,7 @@ export function getSessionState(
 
 /** 会话展示名称：用户标签优先，其次项目名。 */
 export function sessionName(session: WorkspaceSession): string {
-  return session.label ?? session.projectName ?? "未命名工作上下文";
+  return session.label ?? session.projectName ?? t("session.unnamed");
 }
 
 /** 视图中选择「恢复前切换工具」时可选的工具（仅具备受控启动能力的工具）。 */

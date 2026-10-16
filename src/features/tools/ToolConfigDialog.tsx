@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { FolderOpen } from "lucide-react";
 import { useTools } from "../../context/ToolsContext";
+import { useI18n } from "../../i18n";
 import { Button } from "../../components/ui/Button";
 import { Modal } from "../../components/ui/Modal";
 import { Notice } from "../../components/ui/Notice";
@@ -11,16 +12,11 @@ import { TextField } from "../../components/ui/TextField";
 import { pickFile } from "../../services/dialog";
 import { resolveToolCommand } from "../../services/tools";
 import { toErrorMessage } from "../../services/backend";
-import { TOOL_TYPE_LABEL } from "./data";
+import { TOOL_TYPE_KEY } from "./data";
 import type { ToolEntry, ToolType } from "../../types/domain";
 import styles from "./ToolConfigDialog.module.css";
 
 const CUSTOM_VALUE = "__custom__";
-
-const TYPE_OPTIONS: Array<{ value: ToolType; label: string }> = [
-  { value: "desktop", label: TOOL_TYPE_LABEL.desktop },
-  { value: "cli", label: TOOL_TYPE_LABEL.cli },
-];
 
 interface ToolConfigDialogProps {
   open: boolean;
@@ -44,7 +40,16 @@ export function ToolConfigDialog({
   presetToolId = null,
 }: ToolConfigDialogProps) {
   const { tools, addTool, updateTool } = useTools();
+  const { t } = useI18n();
   const isEdit = entry !== null;
+
+  const typeOptions = useMemo(
+    () => [
+      { value: "desktop" as ToolType, label: t(TOOL_TYPE_KEY.desktop) },
+      { value: "cli" as ToolType, label: t(TOOL_TYPE_KEY.cli) },
+    ],
+    [t],
+  );
 
   const [selectedToolId, setSelectedToolId] = useState<string>(CUSTOM_VALUE);
   const [name, setName] = useState("");
@@ -151,10 +156,10 @@ export function ToolConfigDialog({
     const nextErrors: FormErrors = {};
 
     if (isCustom && !name.trim()) {
-      nextErrors.name = "请填写工具名称。";
+      nextErrors.name = t("toolConfig.errName");
     }
     if (!executablePath.trim() && !commandName.trim()) {
-      nextErrors.config = "请提供可执行文件路径或命令名称。";
+      nextErrors.config = t("toolConfig.errConfig");
     }
 
     setErrors(nextErrors);
@@ -183,7 +188,7 @@ export function ToolConfigDialog({
       reset();
       onClose();
     } catch (cause) {
-      setErrorMessage(toErrorMessage(cause, "保存工具配置失败。"));
+      setErrorMessage(toErrorMessage(cause, t("toolConfig.failed")));
       setBusy(false);
     }
   }
@@ -192,17 +197,17 @@ export function ToolConfigDialog({
     <Modal
       open={open}
       onClose={handleClose}
-      title={isEdit ? "编辑工具配置" : "添加工具"}
+      title={isEdit ? t("toolConfig.titleEdit") : t("toolConfig.titleCreate")}
       description={
         isEdit
-          ? "更新该工具的可执行文件或命令信息。"
-          : "登记一个内置工具或自定义工具，并记录其本地路径。"
+          ? t("toolConfig.descriptionEdit")
+          : t("toolConfig.descriptionCreate")
       }
       size="md"
       footer={
         <>
           <Button variant="secondary" onClick={handleClose} disabled={busy}>
-            取消
+            {t("common.cancel")}
           </Button>
           <Button
             variant="primary"
@@ -210,7 +215,7 @@ export function ToolConfigDialog({
             form="tool-config-form"
             disabled={busy}
           >
-            {busy ? "保存中…" : "保存"}
+            {busy ? t("common.saving") : t("common.save")}
           </Button>
         </>
       }
@@ -220,20 +225,20 @@ export function ToolConfigDialog({
           <div className={styles.summary}>
             <span className={styles.summaryName}>{entry!.name}</span>
             <span className={styles.summaryMeta}>
-              {entry!.isCustom ? "自定义工具" : entry!.vendor} ·{" "}
-              {TOOL_TYPE_LABEL[entry!.toolType]}
+              {entry!.isCustom ? t("toolConfig.customTool") : entry!.vendor} ·{" "}
+              {t(TOOL_TYPE_KEY[entry!.toolType])}
             </span>
           </div>
         ) : (
           <SelectField
-            label="工具"
+            label={t("toolConfig.toolLabel")}
             required
             value={selectedToolId}
             options={[
               ...builtInOptions,
-              { value: CUSTOM_VALUE, label: "自定义工具…" },
+              { value: CUSTOM_VALUE, label: t("toolConfig.customOption") },
             ]}
-            hint="选择内置工具以获得自动检测能力，或添加自定义工具。"
+            hint={t("toolConfig.toolHint")}
             onChange={(event) => {
               setSelectedToolId(event.target.value);
               setErrors({});
@@ -244,50 +249,54 @@ export function ToolConfigDialog({
 
         {!isEdit && isCustom && (
           <SegmentedControl
-            ariaLabel="工具类型"
-            options={TYPE_OPTIONS}
+            ariaLabel={t("toolConfig.typeAria")}
+            options={typeOptions}
             value={toolType}
             onChange={setToolType}
           />
         )}
 
         <TextField
-          label={isCustom ? "工具名称" : "显示名称（可选）"}
-          placeholder={presetDefinition?.label ?? "例如 My AI Assistant"}
+          label={
+            isCustom
+              ? t("toolConfig.nameLabelCustom")
+              : t("toolConfig.nameLabelBuiltin")
+          }
+          placeholder={presetDefinition?.label ?? "My AI Assistant"}
           value={name}
           required={isCustom}
           error={errors.name}
-          hint={isCustom ? undefined : "留空则使用工具默认名称。"}
+          hint={isCustom ? undefined : t("toolConfig.nameHint")}
           onChange={(event) => setName(event.target.value)}
         />
 
-        <div className={styles.pickerRow}>
-          <TextField
-            label="可执行文件路径"
-            placeholder="例如 D:\\tools\\my-tool.exe"
-            value={executablePath}
-            error={errors.config}
-            hint="可执行文件与命令名称二选一填写。"
-            onChange={(event) => {
-              setExecutablePath(event.target.value);
-              setErrors((prev) => ({ ...prev, config: undefined }));
-            }}
-          />
-          <Button
-            variant="secondary"
-            icon={<FolderOpen size={14} aria-hidden="true" />}
-            onClick={browseForExecutable}
-            type="button"
-          >
-            浏览…
-          </Button>
-        </div>
+        <TextField
+          label={t("toolConfig.exeLabel")}
+          placeholder={t("toolConfig.exePlaceholder")}
+          value={executablePath}
+          error={errors.config}
+          hint={t("toolConfig.exeHint")}
+          trailing={
+            <Button
+              variant="secondary"
+              icon={<FolderOpen size={14} aria-hidden="true" />}
+              onClick={browseForExecutable}
+              type="button"
+            >
+              {t("common.browse")}
+            </Button>
+          }
+          onChange={(event) => {
+            setExecutablePath(event.target.value);
+            setErrors((prev) => ({ ...prev, config: undefined }));
+          }}
+        />
 
         <TextField
-          label="命令名称"
-          placeholder="例如 my-tool"
+          label={t("toolConfig.cmdLabel")}
+          placeholder={t("toolConfig.cmdPlaceholder")}
           value={commandName}
-          hint="在系统 PATH 中查找的命令。"
+          hint={t("toolConfig.cmdHint")}
           onChange={(event) => setCommandName(event.target.value)}
           onBlur={checkCommand}
         />
@@ -296,10 +305,11 @@ export function ToolConfigDialog({
           <p className={styles.preview}>
             {commandPreview ? (
               <>
-                解析为：<code>{commandPreview}</code>
+                {t("toolConfig.resolvePrefix")}
+                <code>{commandPreview}</code>
               </>
             ) : (
-              "未能在系统 PATH 中找到该命令；保存后可稍后重试检测。"
+              t("toolConfig.cmdNotFound")
             )}
           </p>
         )}

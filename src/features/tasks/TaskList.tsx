@@ -4,10 +4,16 @@ import { Badge } from "../../components/ui/Badge";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { IconButton } from "../../components/ui/IconButton";
 import { useTaskActions } from "../../context/TasksContext";
+import { useI18n } from "../../i18n";
 import { toErrorMessage } from "../../services/backend";
 import { formatDateTime } from "../../utils/format";
-import type { Task } from "../../types/domain";
-import { getDueState, TASK_PRIORITY_META, TASK_STATUS_META } from "./meta";
+import type { Task, TaskStatus } from "../../types/domain";
+import {
+  getDueState,
+  TASK_PRIORITY_META,
+  TASK_STATUS_META,
+  TASK_STATUS_ORDER,
+} from "./meta";
 import styles from "./TaskList.module.css";
 
 interface TaskListProps {
@@ -15,6 +21,8 @@ interface TaskListProps {
   /** 项目 id → 名称；用于展示任务归属。 */
   projectNameById: Record<string, string>;
   onEdit: (task: Task) => void;
+  /** 打开任务所属项目（提供后项目名变为可点击链接）。 */
+  onOpenProject?: (projectId: string) => void;
   onChanged?: () => void;
 }
 
@@ -25,26 +33,31 @@ const DUE_TONE_CLASS = {
   none: "",
 } as const;
 
-/** 任务列表：展示任务并支持完成/重开、编辑与删除。 */
+/** 任务列表：展示任务并支持三态切换、编辑与删除。 */
 export function TaskList({
   tasks,
   projectNameById,
   onEdit,
+  onOpenProject,
   onChanged,
 }: TaskListProps) {
   const { setTaskStatus, deleteTask } = useTaskActions();
+  const { t } = useI18n();
   const [pendingDelete, setPendingDelete] = useState<Task | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function toggleStatus(task: Task) {
+  async function changeStatus(task: Task, next: TaskStatus) {
+    if (task.status === next) {
+      return;
+    }
     setPendingId(task.id);
     setError(null);
     try {
-      await setTaskStatus(task.id, task.status === "done" ? "todo" : "done");
+      await setTaskStatus(task.id, next);
       onChanged?.();
     } catch (cause) {
-      setError(toErrorMessage(cause, "更新任务状态失败。"));
+      setError(toErrorMessage(cause, t("taskList.statusFailed")));
     } finally {
       setPendingId(null);
     }
@@ -61,7 +74,7 @@ export function TaskList({
       setPendingDelete(null);
       onChanged?.();
     } catch (cause) {
-      setError(toErrorMessage(cause, "删除任务失败。"));
+      setError(toErrorMessage(cause, t("taskList.deleteFailed")));
     } finally {
       setPendingId(null);
     }
@@ -72,9 +85,7 @@ export function TaskList({
       {error && <p className={styles.error}>{error}</p>}
       <ul className={styles.list}>
         {tasks.map((task) => {
-          const statusMeta = TASK_STATUS_META[task.status];
           const priorityMeta = TASK_PRIORITY_META[task.priority];
-          const StatusIcon = statusMeta.icon;
           const done = task.status === "done";
           const dueState = getDueState(task.dueDate, task.status);
           const projectName = projectNameById[task.projectId];
@@ -82,28 +93,54 @@ export function TaskList({
 
           return (
             <li key={task.id} className={styles.row}>
-              <button
-                type="button"
-                className={`${styles.statusToggle} ${
-                  done ? styles.statusDone : ""
-                }`}
-                onClick={() => void toggleStatus(task)}
-                disabled={busy}
-                aria-pressed={done}
-                title={done ? "重新打开任务" : "标记为已完成"}
-                aria-label={done ? "重新打开任务" : "标记为已完成"}
+              <div
+                className={styles.statusGroup}
+                role="group"
+                aria-label={t("taskDialog.statusLabel")}
               >
-                <StatusIcon size={18} aria-hidden="true" />
-              </button>
+                {TASK_STATUS_ORDER.map((status) => {
+                  const meta = TASK_STATUS_META[status];
+                  const StatusIcon = meta.icon;
+                  const active = task.status === status;
+                  const label = t(meta.labelKey);
+                  return (
+                    <button
+                      key={status}
+                      type="button"
+                      className={`${styles.statusToggle} ${
+                        active ? styles.statusActive : ""
+                      } ${status === "done" ? styles.statusDone : ""}`}
+                      aria-pressed={active}
+                      title={label}
+                      aria-label={label}
+                      disabled={busy}
+                      onClick={() => void changeStatus(task, status)}
+                    >
+                      <StatusIcon size={17} aria-hidden="true" />
+                    </button>
+                  );
+                })}
+              </div>
 
               <div className={styles.main}>
                 <span className={`${styles.title} ${done ? styles.titleDone : ""}`}>
                   {task.title}
                 </span>
                 <span className={styles.meta}>
-                  <span className={styles.project}>
-                    {projectName ?? "未知项目"}
-                  </span>
+                  {onOpenProject && projectName ? (
+                    <button
+                      type="button"
+                      className={styles.projectLink}
+                      onClick={() => onOpenProject(task.projectId)}
+                      title={t("taskList.openProject", { name: projectName })}
+                    >
+                      {projectName}
+                    </button>
+                  ) : (
+                    <span className={styles.project}>
+                      {projectName ?? t("taskList.unknownProject")}
+                    </span>
+                  )}
                   {task.dueDate && (
                     <span
                       className={`${styles.due} ${
@@ -112,29 +149,37 @@ export function TaskList({
                           : ""
                       }`}
                     >
-                      截止 {task.dueDate}
-                      {dueState === "overdue" ? "（已过期）" : ""}
+                      {t("taskList.due", { date: task.dueDate })}
+                      {dueState === "overdue" ? t("taskList.overdue") : ""}
                     </span>
                   )}
                 </span>
               </div>
 
               <div className={styles.badges}>
-                <Badge tone={statusMeta.tone}>{statusMeta.label}</Badge>
-                <Badge tone={priorityMeta.tone}>优先级 {priorityMeta.label}</Badge>
+                <Badge tone={TASK_STATUS_META[task.status].tone}>
+                  {t(TASK_STATUS_META[task.status].labelKey)}
+                </Badge>
+                <Badge tone={priorityMeta.tone}>
+                  {t("taskList.priority", {
+                    label: t(priorityMeta.labelKey),
+                  })}
+                </Badge>
               </div>
 
               <time
                 className={styles.time}
                 dateTime={task.updatedAt}
-                title={`更新时间：${formatDateTime(task.updatedAt)}`}
+                title={t("taskList.updatedAt", {
+                  time: formatDateTime(task.updatedAt),
+                })}
               >
                 {formatDateTime(task.updatedAt)}
               </time>
 
               <div className={styles.actions}>
                 <IconButton
-                  label="编辑任务"
+                  label={t("taskList.edit")}
                   size="sm"
                   onClick={() => onEdit(task)}
                   disabled={busy}
@@ -142,7 +187,7 @@ export function TaskList({
                   <Pencil size={14} aria-hidden="true" />
                 </IconButton>
                 <IconButton
-                  label="删除任务"
+                  label={t("taskList.delete")}
                   size="sm"
                   className={styles.dangerIcon}
                   onClick={() => setPendingDelete(task)}
@@ -158,13 +203,15 @@ export function TaskList({
 
       <ConfirmDialog
         open={pendingDelete !== null}
-        title="删除任务？"
+        title={t("taskList.confirmDeleteTitle")}
         description={
           pendingDelete
-            ? `将永久删除「${pendingDelete.title}」，此操作无法撤销。`
+            ? t("taskList.confirmDeleteDescription", {
+                title: pendingDelete.title,
+              })
             : undefined
         }
-        confirmLabel="删除"
+        confirmLabel={t("common.delete")}
         tone="danger"
         busy={pendingId !== null}
         onConfirm={handleDelete}

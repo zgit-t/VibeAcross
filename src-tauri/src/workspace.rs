@@ -109,7 +109,7 @@ pub struct RestoreOutcome {
     pub launch: LaunchResult,
 }
 
-const SELECT_SQL: &str = "SELECT w.id, w.project_id, w.tool_id, w.task_id, w.label,
+pub(crate) const SELECT_SQL: &str = "SELECT w.id, w.project_id, w.tool_id, w.task_id, w.label,
         w.restore_level, w.created_at, w.updated_at, w.last_used_at,
         w.last_restore_status, w.last_restore_error,
         p.name AS project_name, p.path AS project_path,
@@ -119,7 +119,7 @@ const SELECT_SQL: &str = "SELECT w.id, w.project_id, w.tool_id, w.task_id, w.lab
      LEFT JOIN tool_installations t ON t.id = w.tool_id
      LEFT JOIN tasks k ON k.id = w.task_id";
 
-fn row_to_session(row: &rusqlite::Row<'_>) -> rusqlite::Result<WorkspaceSession> {
+pub(crate) fn row_to_session(row: &rusqlite::Row<'_>) -> rusqlite::Result<WorkspaceSession> {
     let project_path: Option<String> = row.get("project_path")?;
     Ok(WorkspaceSession {
         id: row.get("id")?,
