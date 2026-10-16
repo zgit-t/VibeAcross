@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "VibeAcross 默认权限集合：核心窗口与事件 IPC，以及系统目录选择对话框。",
+  "windows": ["main"],
+  "permissions": ["core:default", "dialog:default"]
+}

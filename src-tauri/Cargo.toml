@@ -1,0 +1,37 @@
+[package]
+name = "vibeacross"
+version = "0.1.0"
+description = "VibeAcross 本地桌面工作区管理工具"
+authors = ["VibeAcross"]
+edition = "2021"
+rust-version = "1.77.2"
+
+# Tauri 2 采用 lib + bin 结构，便于后续扩展到移动端与单元测试。
+[lib]
+name = "vibeacross_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+chrono = "0.4.45"
+uuid = { version = "1.20.0", features = ["v4"] }
+tauri-plugin-dialog = "2.7.3"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
+
+[dev-dependencies]
+tempfile = "3.27.0"
+
+[target."cfg(windows)".dependencies]
+winreg = "0.56.0"

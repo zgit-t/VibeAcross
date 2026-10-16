@@ -1,0 +1,60 @@
+.wrapper {
+  display: inline-flex;
+}
+
+/*
+ * 浮层通过 Portal 挂载到 body，并使用 fixed 定位，脱离列表卡片的
+ * `overflow: hidden` 与内容区滚动容器，因此不会被裁剪。
+ * z-index 高于 Modal(100) 与 Drawer(1000)，确保展开时位于最上层。
+ */
+.menu {
+  position: fixed;
+  z-index: 1100;
+  min-width: 176px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  padding: var(--space-1);
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+
+/* 定位计算完成前先隐藏，避免出现闪烁或错位。 */
+.hidden {
+  visibility: hidden;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.item:hover:not(:disabled) {
+  background: var(--color-hover);
+}
+
+.item:disabled {
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+
+.danger {
+  color: var(--color-danger);
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-text-muted);
+}

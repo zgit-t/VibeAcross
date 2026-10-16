@@ -1,0 +1,131 @@
+/**
+ * VibeAcross 设计令牌（Design Tokens）。
+ *
+ * 所有颜色、间距、圆角、字号、阴影均集中在此维护。
+ * 组件样式中禁止硬编码颜色，必须引用这里的 CSS 变量。
+ *
+ * 主题通过 <html data-theme="light|dark"> 切换；
+ * "system" 模式由前端在运行时解析为 light / dark 后写入该属性。
+ */
+
+/* 与主题无关的通用令牌 */
+:root {
+  /* 间距 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+
+  /* 圆角 */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+
+  /* 字体 */
+  --font-sans: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui,
+    -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Cascadia Code", "Cascadia Mono", Consolas, "Courier New", monospace;
+
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-md: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 20px;
+  --font-size-2xl: 24px;
+
+  /* 布局尺寸 */
+  --sidebar-width: 220px;
+  --sidebar-width-collapsed: 56px;
+  --topbar-height: 52px;
+  --content-max-width: 1180px;
+
+  /* 交互 */
+  --transition-fast: 120ms ease;
+  --transition-base: 180ms ease;
+  --focus-ring: 0 0 0 2px var(--color-content-bg), 0 0 0 4px var(--color-accent);
+}
+
+/* 深色主题（默认） */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-window-bg: #0d0f13;
+  --color-sidebar-bg: #14171c;
+  --color-content-bg: #0f1116;
+  --color-panel: #171b21;
+  --color-panel-alt: #1d222a;
+
+  --color-hover: #1b2028;
+  --color-selected: #1e2a40;
+  --color-selected-text: #dbe9ff;
+
+  --color-border: #262b33;
+  --color-border-strong: #363d49;
+
+  --color-text: #e6e9ee;
+  --color-text-secondary: #a3abb8;
+  --color-text-muted: #6f7885;
+
+  --color-accent: #3b82f6;
+  --color-accent-hover: #2f74e0;
+  --color-accent-contrast: #ffffff;
+  --color-accent-soft: rgba(59, 130, 246, 0.16);
+
+  --color-success: #3fb950;
+  --color-success-soft: rgba(63, 185, 80, 0.16);
+  --color-warning: #d29922;
+  --color-warning-soft: rgba(210, 153, 34, 0.16);
+  --color-danger: #f85149;
+  --color-danger-soft: rgba(248, 81, 73, 0.16);
+
+  --color-overlay: rgba(0, 0, 0, 0.55);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.55);
+}
+
+/* 浅色主题 */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --color-window-bg: #f3f4f6;
+  --color-sidebar-bg: #eceef1;
+  --color-content-bg: #f7f8fa;
+  --color-panel: #ffffff;
+  --color-panel-alt: #f1f3f6;
+
+  --color-hover: #e9ecf0;
+  --color-selected: #dce7fb;
+  --color-selected-text: #14315e;
+
+  --color-border: #dcdfe4;
+  --color-border-strong: #c3c8d0;
+
+  --color-text: #1b1f24;
+  --color-text-secondary: #4d5560;
+  --color-text-muted: #7b828d;
+
+  --color-accent: #2563eb;
+  --color-accent-hover: #1d4ed8;
+  --color-accent-contrast: #ffffff;
+  --color-accent-soft: rgba(37, 99, 235, 0.12);
+
+  --color-success: #1a7f37;
+  --color-success-soft: rgba(26, 127, 55, 0.12);
+  --color-warning: #9a6700;
+  --color-warning-soft: rgba(154, 103, 0, 0.12);
+  --color-danger: #cf222e;
+  --color-danger-soft: rgba(207, 34, 46, 0.12);
+
+  --color-overlay: rgba(15, 17, 21, 0.35);
+
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.08);
+  --shadow-md: 0 4px 12px rgba(16, 24, 40, 0.12);
+  --shadow-lg: 0 16px 40px rgba(16, 24, 40, 0.18);
+}

@@ -1,0 +1,25 @@
+.shell {
+  display: flex;
+  height: 100%;
+  background: var(--color-window-bg);
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+  background: var(--color-content-bg);
+}
+
+.content {
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+  padding: var(--space-7) var(--space-7) var(--space-8);
+}
+
+@media (max-width: 720px) {
+  .content {
+    padding: var(--space-5) var(--space-4) var(--space-6);
+  }
+}

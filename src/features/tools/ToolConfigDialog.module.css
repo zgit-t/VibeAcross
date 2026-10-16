@@ -1,0 +1,49 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.pickerRow {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.pickerRow > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-panel-alt);
+}
+
+.summaryName {
+  color: var(--color-text);
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+}
+
+.summaryMeta {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.preview {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  word-break: break-all;
+}
+
+.preview code {
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+}

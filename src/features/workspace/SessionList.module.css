@@ -1,0 +1,179 @@
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.list li:last-child .row {
+  border-bottom: none;
+}
+
+.row:hover {
+  background: var(--color-hover);
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.title {
+  color: var(--color-text);
+  font-weight: 500;
+  font-size: var(--font-size-md);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.project,
+.tool {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+
+.dot {
+  color: var(--color-text-muted);
+}
+
+.taskLink {
+  padding: 0;
+  color: var(--color-accent);
+  background: transparent;
+  border: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.taskLink:hover {
+  text-decoration: underline;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  flex-wrap: wrap;
+}
+
+.statusOk {
+  color: var(--color-success);
+}
+
+.statusFailed {
+  color: var(--color-danger);
+}
+
+.tooltip {
+  color: var(--color-text-muted);
+}
+
+.hint {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-warning);
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.toolSelect {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.toolSelectLabel {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.toolSelect select {
+  padding: var(--space-1) var(--space-2);
+  color: var(--color-text);
+  background: var(--color-content-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+}
+
+.toolSelect select:focus-visible {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: var(--focus-ring);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.dangerIcon:hover:not(:disabled) {
+  color: var(--color-danger);
+}
+
+.error {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+}
+
+@media (max-width: 900px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "main actions"
+      "controls controls";
+    row-gap: var(--space-2);
+  }
+
+  .main {
+    grid-area: main;
+  }
+
+  .controls {
+    grid-area: controls;
+    justify-content: flex-start;
+  }
+
+  .actions {
+    grid-area: actions;
+  }
+}

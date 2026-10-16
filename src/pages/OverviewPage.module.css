@@ -1,0 +1,185 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.bannerBody {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.resume {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+.resumeMain {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1;
+  min-width: 0;
+}
+
+.resumeTitleRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.resumeTitle {
+  color: var(--color-text);
+  font-weight: 500;
+  font-size: var(--font-size-md);
+}
+
+.resumeMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.resumeError {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--font-size-xs);
+}
+
+.resumeNotice {
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.toolList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.toolRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+
+.toolList li:last-child .toolRow {
+  border-bottom: none;
+}
+
+.toolRow:hover {
+  background: var(--color-hover);
+}
+
+.toolIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  background: var(--color-panel-alt);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.toolMain {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.toolName {
+  color: var(--color-text);
+  font-weight: 500;
+  font-size: var(--font-size-sm);
+}
+
+.toolVendor {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.taskStats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.taskStat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--space-3);
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.taskStat:hover {
+  background: var(--color-hover);
+  border-color: var(--color-accent);
+}
+
+.taskIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+}
+
+.todo {
+  color: var(--color-text-secondary);
+}
+
+.inProgress {
+  color: var(--color-accent);
+}
+
+.done {
+  color: var(--color-success);
+}
+
+.taskCount {
+  color: var(--color-text);
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+}
+
+.taskLabel {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
