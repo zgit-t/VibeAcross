@@ -6,7 +6,7 @@ VibeAcross is a **local-first desktop workspace manager** for developers who bui
 
 All data is stored **locally** in a SQLite database on your own computer. There is no server, no account, no cloud sync, and no built-in LLM API.
 
-> **Status:** pre-release (`v0.2.0`). No prebuilt installers are published yet — build from source (see [Installation](#installation)).
+> **Status:** release (`v1.0.0`). No prebuilt installers are published yet — build from source (see [Installation](#installation)).
 
 ## Why VibeAcross exists
 
@@ -98,8 +98,8 @@ Build output (`src-tauri/target/release/`):
 
 - The runnable application: `vibeacross.exe`
 - Installers under `src-tauri/target/release/bundle/`:
-  - `msi/VibeAcross_0.2.0_x64_zh-CN.msi`
-  - `nsis/VibeAcross_0.2.0_x64-setup.exe`
+  - `msi/VibeAcross_1.0.0_x64_zh-CN.msi`
+  - `nsis/VibeAcross_1.0.0_x64-setup.exe`
 
 The installer contains only what is needed to run the app; it does not include source code, development databases, or temporary files. Installing or uninstalling does not touch your data in `%APPDATA%\com.vibeacross.app`.
 

@@ -4,6 +4,7 @@ import { I18nProvider } from "../i18n";
 import { RevisionProvider } from "../context/RevisionContext";
 import { ToolsProvider } from "../context/ToolsContext";
 import type { ToolEntry } from "../types/domain";
+import { APP_VERSION } from "../config/app";
 import { AboutDialog } from "./AboutDialog";
 
 vi.mock("../context/AppContext", () => ({
@@ -96,8 +97,8 @@ describe("关于页面：面向普通用户的产品介绍", () => {
     expect(await within(toolList).findByText("OpenCode")).toBeInTheDocument();
     expect(within(toolList).getByText("Trae")).toBeInTheDocument();
 
-    // 版本信息复用应用版本。
-    expect(screen.getByText("版本 0.2.0")).toBeInTheDocument();
+    // 版本信息复用应用版本（与 package.json 注入值一致，避免重复硬编码）。
+    expect(screen.getByText(`版本 ${APP_VERSION}`)).toBeInTheDocument();
 
     // 不再展示技术栈 / 后端通信示例等开发者内容。
     expect(screen.queryByText("技术栈")).not.toBeInTheDocument();

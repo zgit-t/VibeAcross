@@ -6,7 +6,7 @@ VibeAcross 是一款**本地优先的桌面工作区管理工具**，面向使�
 
 所有数据都**保存在本机**的 SQLite 数据库中。没有远程服务器、没有账号、没有云同步，也不内置大模型 API。
 
-> **状态：** 预发布（`v0.2.0`）。暂未发布预编译安装包，请从源码构建（见[安装](#安装)）。
+> **状态：** 正式版（`v1.0.0`）。暂未发布预编译安装包，请从源码构建（见[安装](#安装)）。
 
 ## 为什么需要 VibeAcross
 
@@ -98,8 +98,8 @@ npm run tauri:build
 
 - 可运行程序：`vibeacross.exe`
 - 安装包位于 `src-tauri/target/release/bundle/`：
-  - `msi/VibeAcross_0.2.0_x64_zh-CN.msi`
-  - `nsis/VibeAcross_0.2.0_x64-setup.exe`
+  - `msi/VibeAcross_1.0.0_x64_zh-CN.msi`
+  - `nsis/VibeAcross_1.0.0_x64-setup.exe`
 
 安装包只包含运行所需内容，不包含源代码、开发数据库或临时文件。安装与卸载都不会影响 `%APPDATA%\com.vibeacross.app` 中的用户数据。
 
