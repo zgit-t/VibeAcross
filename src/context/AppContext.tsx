@@ -21,6 +21,13 @@ import { readPreference, writePreference } from "../services/preferences";
 import { normalizeLocale, setLocale as setActiveLocale } from "../i18n/locale";
 import type { Locale } from "../i18n/locale";
 import { t } from "../i18n/translate";
+import {
+  AUTO_CHECK_INTERVAL,
+  AUTO_CHECK_START_DELAY_MS,
+  checkForUpdates,
+  getUpdateState,
+  isAutoCheckSnoozed,
+} from "../services/updater";
 import type { AppSettings } from "../types/domain";
 import type { ResolvedTheme, ThemeMode, ViewId } from "../types/navigation";
 
@@ -30,6 +37,7 @@ const EMPTY_SETTINGS: AppSettings = {
   showLastContextOnStartup: true,
   autoRestoreLastContext: false,
   language: null,
+  autoUpdate: false,
 };
 
 /** 界面语言的本地偏好键（SQLite 为主，localStorage 用于快速启动）。 */
@@ -84,6 +92,9 @@ interface AppContextValue {
   /** 启动时自动恢复最近的工作上下文（默认关闭）。 */
   autoRestoreLastContext: boolean;
   setAutoRestoreLastContext: (value: boolean) => void;
+  /** 自动检查应用更新（默认关闭）。 */
+  autoUpdate: boolean;
+  setAutoUpdate: (value: boolean) => void;
   /** 当前界面语言。 */
   language: Locale;
   setLanguage: (locale: Locale) => void;
@@ -152,6 +163,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, []);
+
+  // 自动检查更新：仅在用户开启且已载入设置后启动；启动延迟 + 固定间隔。
+  useEffect(() => {
+    if (!settingsLoaded || !settings.autoUpdate || !isDesktopRuntime()) {
+      return;
+    }
+    let cancelled = false;
+    const runIfIdle = () => {
+      if (cancelled || isAutoCheckSnoozed()) {
+        return;
+      }
+      const { phase } = getUpdateState();
+      if (phase === "checking" || phase === "downloading" || phase === "installing") {
+        return;
+      }
+      void checkForUpdates();
+    };
+    const startTimer = window.setTimeout(runIfIdle, AUTO_CHECK_START_DELAY_MS);
+    const interval = window.setInterval(runIfIdle, AUTO_CHECK_INTERVAL);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(startTimer);
+      window.clearInterval(interval);
+    };
+  }, [settingsLoaded, settings.autoUpdate]);
 
   // 跟随系统主题变化（仅在 system 模式下生效）。
   useEffect(() => {
@@ -250,6 +286,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [persistSettings],
   );
 
+  const setAutoUpdate = useCallback(
+    (value: boolean) => {
+      void persistSettings({ autoUpdate: value });
+    },
+    [persistSettings],
+  );
+
   const setLanguage = useCallback(
     (locale: Locale) => {
       setLanguageState(locale);
@@ -294,6 +337,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setShowLastContextOnStartup,
       autoRestoreLastContext: settings.autoRestoreLastContext,
       setAutoRestoreLastContext,
+      autoUpdate: settings.autoUpdate,
+      setAutoUpdate,
       language,
       setLanguage,
       settingsError,
@@ -324,6 +369,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setDefaultProjectFolder,
       setShowLastContextOnStartup,
       setAutoRestoreLastContext,
+      setAutoUpdate,
       language,
       setLanguage,
       settingsError,

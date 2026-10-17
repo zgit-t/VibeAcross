@@ -353,20 +353,22 @@ fn capability_matrix_marks_unverified_as_not_verified() {
 }
 
 #[test]
-fn opencode_desktop_capabilities_are_all_unsupported_and_distinct_from_cli() {
+fn opencode_desktop_lists_history_from_shared_store_but_supports_no_mutations() {
     let desktop = capabilities_for("opencode-desktop");
+    // 已核实：可只读枚举历史会话并取得稳定原生标识。
+    assert_eq!(desktop.list, Support::Supported);
+    assert_eq!(desktop.native_id, Support::Supported);
+    // 内嵌服务不可从外部连接，创建 / 恢复 / 改名 / 删除一律不支持。
     for capability in [
         desktop.create,
-        desktop.list,
         desktop.restore,
-        desktop.native_id,
         desktop.rename_title,
         desktop.delete,
     ] {
         assert_eq!(
             capability,
             Support::Unsupported,
-            "OpenCode 桌面应用不应声称支持任何原生会话能力"
+            "OpenCode 桌面应用不应声称支持该原生会话能力"
         );
     }
     assert!(
@@ -374,13 +376,19 @@ fn opencode_desktop_capabilities_are_all_unsupported_and_distinct_from_cli() {
         "OpenCode 桌面应用的能力说明不应为空"
     );
 
-    // 桌面应用绝不能沿用命令行工具（opencode）的完整会话能力。
+    // 历史来源为共享的本地会话数据库（不同于 CLI 的官方服务来源种类）。
+    assert_eq!(
+        desktop.history.kind,
+        vibeacross_lib::native::HistorySourceKind::SessionDatabase
+    );
+    assert!(desktop.history.stable_native_id);
+    assert!(!desktop.history.reads_messages);
+
+    // 桌面应用仍绝不沿用命令行工具（opencode）的创建 / 恢复能力。
     let cli = capabilities_for("opencode");
     assert_eq!(cli.create, Support::Supported);
-    assert_eq!(cli.list, Support::Supported);
     assert_eq!(cli.restore, Support::Supported);
-    assert_ne!(desktop.list, cli.list);
-    assert_ne!(desktop.create, cli.create);
+    assert_ne!(desktop.history.kind, cli.history.kind);
 }
 
 #[test]

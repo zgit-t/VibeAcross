@@ -16,7 +16,19 @@ use std::time::Duration;
 #[derive(Debug, Clone)]
 pub struct HttpResponse {
     pub status: u16,
+    /// 响应头（名称按原样保留，比较时大小写不敏感）。
+    pub headers: Vec<(String, String)>,
     pub body: String,
+}
+
+impl HttpResponse {
+    /// 按名称读取响应头（大小写不敏感）。用于保留 `Allow` 等诊断信息。
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.as_str())
+    }
 }
 
 /// 向本机回环地址发起一次 HTTP 请求。
@@ -84,23 +96,22 @@ pub fn request(
         let read = reader
             .read_line(&mut line)
             .map_err(|error| AppError::new("NATIVE_HTTP_READ", format!("读取响应失败：{error}")))?;
-        if read == 0 || line == "\r\n" || line == "\n" {
+        let trimmed = line.trim_end_matches(['\r', '\n']);
+        if read == 0 || trimmed.is_empty() {
             break;
         }
-        headers.push(line);
+        if let Some((name, value)) = trimmed.split_once(':') {
+            headers.push((name.trim().to_string(), value.trim().to_string()));
+        }
     }
 
-    let chunked = headers.iter().any(|line| {
-        let lower = line.to_ascii_lowercase();
-        lower.starts_with("transfer-encoding:") && lower.contains("chunked")
+    let chunked = headers.iter().any(|(name, value)| {
+        name.eq_ignore_ascii_case("transfer-encoding") && value.to_ascii_lowercase().contains("chunked")
     });
-    let content_length = headers.iter().find_map(|line| {
-        let lower = line.to_ascii_lowercase();
-        lower
-            .starts_with("content-length:")
-            .then(|| line.split_once(':').map(|(_, value)| value.trim().to_string()))
+    let content_length = headers.iter().find_map(|(name, value)| {
+        name.eq_ignore_ascii_case("content-length")
+            .then(|| value.parse::<usize>().ok())
             .flatten()
-            .and_then(|value| value.parse::<usize>().ok())
     });
 
     let body = if chunked {
@@ -115,7 +126,7 @@ pub fn request(
         String::new()
     };
 
-    Ok(HttpResponse { status, body })
+    Ok(HttpResponse { status, headers, body })
 }
 
 fn parse_status_line(status_line: &str) -> Result<u16, AppError> {
@@ -159,16 +170,21 @@ pub fn parse_response(text: &str) -> Result<HttpResponse, AppError> {
         None => (text, ""),
     };
     let status = parse_status_line(head.lines().next().unwrap_or(""))?;
-    let chunked = head.lines().any(|line| {
-        let lower = line.to_ascii_lowercase();
-        lower.starts_with("transfer-encoding:") && lower.contains("chunked")
+    let mut headers = Vec::new();
+    for line in head.lines().skip(1) {
+        if let Some((name, value)) = line.split_once(':') {
+            headers.push((name.trim().to_string(), value.trim().to_string()));
+        }
+    }
+    let chunked = headers.iter().any(|(name, value)| {
+        name.eq_ignore_ascii_case("transfer-encoding") && value.to_ascii_lowercase().contains("chunked")
     });
     let body = if chunked {
         decode_chunked(raw_body)
     } else {
         raw_body.to_string()
     };
-    Ok(HttpResponse { status, body })
+    Ok(HttpResponse { status, headers, body })
 }
 
 /// 解码分块传输编码的响应体（纯文本，供测试使用）。

@@ -49,6 +49,10 @@ pub struct AppSettings {
     /// 界面语言（BCP-47，如 zh-CN / en-US）。未设置时由前端回退到默认语言。
     #[serde(default)]
     pub language: Option<String>,
+    /// 是否在启动后自动检查应用更新。默认为 false（缺失即视为关闭），
+    /// 仅在用户显式开启后才会联网请求更新清单。
+    #[serde(default)]
+    pub auto_update: bool,
 }
 
 #[derive(Debug, Serialize)]

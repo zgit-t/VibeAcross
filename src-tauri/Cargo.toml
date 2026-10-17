@@ -1,10 +1,11 @@
 [package]
 name = "vibeacross"
-version = "1.1.0"
+version = "1.2.0"
 description = "VibeAcross 本地桌面工作区管理工具"
 authors = ["VibeAcross"]
 edition = "2021"
-rust-version = "1.77.2"
+# 官方更新插件（tauri-plugin-updater / tauri-plugin-process 2.x）要求 Rust >= 1.90。
+rust-version = "1.90"
 
 # Tauri 2 采用 lib + bin 结构，便于后续扩展到移动端与单元测试。
 [lib]
@@ -22,6 +23,9 @@ rusqlite = { version = "0.40.2", features = ["bundled"] }
 chrono = "0.4.45"
 uuid = { version = "1.20.0", features = ["v4"] }
 tauri-plugin-dialog = "2.7.3"
+# 官方应用内更新：updater 负责检查/下载/校验签名与安装，process 提供安装后重启。
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 [profile.release]
 codegen-units = 1

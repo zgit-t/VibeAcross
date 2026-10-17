@@ -8,6 +8,7 @@ const KEY_THEME: &str = "theme";
 const KEY_SHOW_LAST_CONTEXT: &str = "show_last_context_on_startup";
 const KEY_AUTO_RESTORE: &str = "auto_restore_last_context";
 const KEY_LANGUAGE: &str = "language";
+const KEY_AUTO_UPDATE: &str = "auto_update";
 
 /// 最近一次「全量」工具检测时间；从未全量检测时为缺失。
 pub const KEY_TOOLS_LAST_DETECTION: &str = "tools_last_detection_at";
@@ -85,6 +86,7 @@ pub fn get_settings(conn: &Connection) -> Result<AppSettings, AppError> {
         show_last_context_on_startup: read_flag_default_true(conn, KEY_SHOW_LAST_CONTEXT)?,
         auto_restore_last_context: read_flag(conn, KEY_AUTO_RESTORE)?,
         language: read_setting(conn, KEY_LANGUAGE)?,
+        auto_update: read_flag(conn, KEY_AUTO_UPDATE)?,
     })
 }
 
@@ -126,6 +128,7 @@ pub fn update_settings(
     write_flag_explicit(conn, KEY_SHOW_LAST_CONTEXT, incoming.show_last_context_on_startup)?;
     write_flag(conn, KEY_AUTO_RESTORE, incoming.auto_restore_last_context)?;
     write_setting(conn, KEY_LANGUAGE, language.as_deref())?;
+    write_flag(conn, KEY_AUTO_UPDATE, incoming.auto_update)?;
 
     get_settings(conn)
 }

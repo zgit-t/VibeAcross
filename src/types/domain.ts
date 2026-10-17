@@ -185,6 +185,8 @@ export interface AppSettings {
   autoRestoreLastContext: boolean;
   /** 界面语言（如 zh-CN / en-US）；未设置时为 null，由前端回退到默认语言。 */
   language: string | null;
+  /** 是否在启动后自动检查更新。默认为 false（仅用户开启后才联网）。 */
+  autoUpdate: boolean;
 }
 
 /** 本地数据存储信息。 */

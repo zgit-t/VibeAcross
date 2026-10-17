@@ -135,14 +135,14 @@ impl HistorySource {
                     .to_string(),
             },
             "opencode-desktop" => HistorySource {
-                kind: HistorySourceKind::None,
-                completeness: HistoryCompleteness::None,
-                stable_native_id: false,
+                kind: HistorySourceKind::SessionDatabase,
+                completeness: HistoryCompleteness::FullNative,
+                stable_native_id: true,
                 reads_messages: false,
                 can_restore: false,
-                summary: "OpenCode 桌面应用为图形界面应用，未核实其可只读访问的本地历史来源；不沿用命令行工具（opencode）的服务接口。"
+                summary: "与 OpenCode 命令行工具共用同一份本地会话数据库 `~/.local/share/opencode/opencode.db`（表 `session`）；以只读方式枚举会话元数据（id / 标题 / 目录 / 时间），排除已归档会话。"
                     .to_string(),
-                limitations: "与 OpenCode 命令行工具的会话数据相互独立，未确认可在不破坏数据的前提下枚举；因此不提供历史会话查询，也不读取其任何数据。"
+                limitations: "仅读取会话元数据，不读取对话正文。桌面应用内嵌的本地服务仅监听随机回环端口并使用随机生成的密码（Basic 认证、来源限于应用自身），外部进程无法连接，因此不提供创建 / 恢复 / 改名 / 删除，也不写入 / 迁移 / 删除任何数据。"
                     .to_string(),
             },
             _ => HistorySource {
@@ -241,6 +241,9 @@ mod tests {
             HistorySource::for_tool("opencode").completeness,
             HistoryCompleteness::FullNative
         );
+        let desktop = HistorySource::for_tool("opencode-desktop");
+        assert_eq!(desktop.kind, HistorySourceKind::SessionDatabase);
+        assert_eq!(desktop.completeness, HistoryCompleteness::FullNative);
     }
 
     #[test]
@@ -263,14 +266,14 @@ mod tests {
     }
 
     #[test]
-    fn opencode_desktop_has_no_history_source_and_is_distinct_from_cli() {
+    fn opencode_desktop_has_shared_local_store_and_is_distinct_from_cli_kind() {
         let desktop = HistorySource::for_tool("opencode-desktop");
-        assert_eq!(desktop.kind, HistorySourceKind::None);
-        assert_eq!(desktop.completeness, HistoryCompleteness::None);
-        assert!(!desktop.stable_native_id);
+        assert_eq!(desktop.kind, HistorySourceKind::SessionDatabase);
+        assert_eq!(desktop.completeness, HistoryCompleteness::FullNative);
+        assert!(desktop.stable_native_id);
         assert!(!desktop.reads_messages);
         assert!(!desktop.can_restore);
-        // 绝不能沿用命令行工具（opencode）的服务来源。
+        // 与命令行工具同源，但来源种类不同：CLI 经官方服务，桌面端经共用本地数据库。
         let cli = HistorySource::for_tool("opencode");
         assert_eq!(cli.kind, HistorySourceKind::Service);
         assert!(cli.can_restore);
@@ -279,7 +282,15 @@ mod tests {
 
     #[test]
     fn no_source_reads_full_messages() {
-        for tool in ["opencode", "claude-code", "cursor", "trae", "trae-solo", "workbuddy"] {
+        for tool in [
+            "opencode",
+            "opencode-desktop",
+            "claude-code",
+            "cursor",
+            "trae",
+            "trae-solo",
+            "workbuddy",
+        ] {
             assert!(
                 !HistorySource::for_tool(tool).reads_messages,
                 "{tool} 不应声称读取完整消息记录"

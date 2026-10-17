@@ -1,0 +1,18 @@
+.status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  max-width: 280px;
+  text-align: right;
+}
+
+.statusText {
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+}
+
+.lastChecked {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}

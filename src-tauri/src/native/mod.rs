@@ -18,6 +18,7 @@ pub mod cursor;
 pub mod history;
 pub mod http;
 pub mod opencode;
+pub mod opencode_desktop;
 pub mod proc;
 pub mod server;
 pub mod trae;
@@ -105,7 +106,7 @@ pub fn capabilities_for(tool_id: &str) -> SessionCapabilities {
             Support::Supported,
             Support::Supported,
             Support::Supported,
-            "已在 OpenCode 1.19.0 本机核实：经官方 HTTP 服务（opencode serve）创建 / 查询 / 删除会话与修改标题，经 `session list --format json` 枚举历史，经 `--session <id>` 恢复。删除会话经 `DELETE /session/{id}` 实现，仅删除指定会话，不触碰其它会话。",
+            "已在 OpenCode 1.19.0 本机核实：经官方 HTTP 服务（opencode serve）创建 / 查询 / 删除会话与修改标题，经 `session list --format json` 枚举历史，经 `--session <id>` 恢复。会话接口依据服务自带的 OpenAPI 文档（`/doc`）在经典接口（`/session`）与 v2 接口（`/api/session`）之间据实选择，以兼容不同版本 / 连接模式；删除会话仅删除指定会话，不触碰其它会话。",
         ),
         "claude-code" => (
             Support::Supported,
@@ -154,12 +155,12 @@ pub fn capabilities_for(tool_id: &str) -> SessionCapabilities {
             ),
             "opencode-desktop" => (
                 Support::Unsupported,
+                Support::Supported,
+                Support::Unsupported,
+                Support::Supported,
                 Support::Unsupported,
                 Support::Unsupported,
-                Support::Unsupported,
-                Support::Unsupported,
-                Support::Unsupported,
-                "OpenCode 桌面应用为独立于 OpenCode 命令行工具的图形界面应用，官方未公开可用于脚本的会话创建 / 枚举 / 恢复 / 改名 / 删除接口。其内嵌的本地服务与 `opencode` 命令行接口不等同，绝不能沿用 CLI 的会话能力；因此不提供任何原生会话操作，仅支持在项目中启动该应用。",
+                "OpenCode 桌面应用是图形界面外壳，内部运行与 `opencode` 命令行工具相同的 OpenCode 服务内核，并共用同一份本地会话存储（`%USERPROFILE%\\.local\\share\\opencode\\opencode.db`，SQLite；会话表 `session`）。因此其历史会话与命令行工具同源：以只读方式直接查询该数据库，据 `directory` 字段归属当前项目、排除已归档会话，标题取自 `title`。桌面应用内嵌的本地服务仅监听随机回环端口并使用每次启动随机生成的密码（Basic 认证、来源限于应用自身），外部进程无法连接；其可执行文件为图形程序，不能作为无头服务启动。故不提供创建 / 恢复 / 改名 / 删除能力，也不写入任何数据。",
             ),
             _ => (
             Support::NotVerified,
@@ -253,6 +254,7 @@ impl NativeBackend for SystemNativeBackend {
     fn list(&self, ctx: &ToolContext) -> Result<Vec<NativeSessionInfo>, AppError> {
         match ctx.tool_id.as_str() {
             "opencode" => opencode::list(ctx),
+            "opencode-desktop" => opencode_desktop::list(ctx),
             "claude-code" => claude::list(ctx),
             "cursor" => cursor::list(ctx),
             "trae" => trae::list(ctx),
@@ -265,6 +267,7 @@ impl NativeBackend for SystemNativeBackend {
     fn list_with_state(&self, ctx: &ToolContext) -> Result<HistoryListing, AppError> {
         match ctx.tool_id.as_str() {
             "opencode" => opencode::list_with_state(ctx),
+            "opencode-desktop" => opencode_desktop::list_with_state(ctx),
             "claude-code" => claude::list_with_state(ctx),
             "cursor" => cursor::list_with_state(ctx),
             "trae" => trae::list_with_state(ctx),

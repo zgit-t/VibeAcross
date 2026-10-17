@@ -813,4 +813,45 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   "aiSession.noToolsTitle": "No detected tool available",
   "aiSession.noTools":
     "No AI tool has been detected yet. Detect or configure one on the Tools page first.",
+
+  // In-app update
+  "update.sectionTitle": "App update",
+  "update.groupDescription":
+    "Check for and install new versions of VibeAcross. Updates come from the official open-source repository and are signature-verified before install.",
+  "update.autoLabel": "Check for updates automatically",
+  "update.autoDescription":
+    "Check for new versions on startup. The app only goes online to fetch the update manifest after you turn this on. Off by default.",
+  "update.checkLabel": "Check for updates",
+  "update.checkDescription": "Manually check whether an update is available.",
+  "update.check": "Check for updates",
+  "update.checking": "Checking…",
+  "update.upToDate": "You're up to date",
+  "update.upToDateHint": "Version {version} is the latest.",
+  "update.available": "New version {version} available",
+  "update.currentVersion": "Current version: {version}",
+  "update.download": "Download update",
+  "update.downloading": "Downloading… {percent}%",
+  "update.downloadingUnknown": "Downloading…",
+  "update.ready": "Update downloaded and ready to install",
+  "update.readyTitle": "Update ready",
+  "update.readyDescription":
+    "Version {version} has been downloaded. Install and restart now?",
+  "update.installNow": "Install and restart",
+  "update.restartLater": "Later",
+  "update.installing": "Installing…",
+  "update.releaseNotes": "Release notes",
+  "update.lastChecked": "Last checked: {time}",
+  "update.errorTitle": "Update failed",
+  "update.errorGeneric": "Update failed. Please try again later.",
+  "update.errorInvalidResponse":
+    "Could not fetch a valid update manifest (the update source returned 404/403, non-JSON content, or a manifest missing required fields). Make sure this release publishes a latest.json.",
+  "update.errorNotDesktop":
+    "Not running in the desktop app; updates are unavailable.",
+  "update.errorNetwork": "Network connection failed; could not fetch the update.",
+  "update.errorInvalidVersion":
+    "The version in the update manifest is invalid: {version}",
+  "update.errorDownload": "Failed to download the update.",
+  "update.errorSignature":
+    "The update package failed signature verification; installation was aborted.",
+  "update.errorInstall": "Failed to install the update.",
 };

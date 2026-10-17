@@ -126,6 +126,19 @@
   font-size: var(--font-size-sm);
 }
 
+.updateRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.updateStatus {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
 .footer {
   display: flex;
   align-items: center;

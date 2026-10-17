@@ -1,5 +1,14 @@
 import { useState } from "react";
-import { ExternalLink, Folders, History, Link2, Wrench } from "lucide-react";
+import {
+  Download,
+  ExternalLink,
+  Folders,
+  History,
+  Link2,
+  RefreshCw,
+  RotateCcw,
+  Wrench,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { useTools } from "../context/ToolsContext";
@@ -7,7 +16,8 @@ import { APP_NAME, APP_REPOSITORY_URL, APP_VERSION } from "../config/app";
 import logo from "../assets/logo.png";
 import { useI18n } from "../i18n";
 import type { TranslationKey } from "../i18n";
-import { openExternalUrl, toErrorMessage } from "../services/backend";
+import { isDesktopRuntime, openExternalUrl, toErrorMessage } from "../services/backend";
+import { useUpdateController } from "../features/update/useUpdateController";
 import { Modal } from "./ui/Modal";
 import { Button } from "./ui/Button";
 import styles from "./AboutDialog.module.css";
@@ -47,6 +57,7 @@ export function AboutDialog() {
   const { aboutOpen, closeAbout } = useApp();
   const { t } = useI18n();
   const { tools, loading: toolsLoading } = useTools();
+  const update = useUpdateController();
   const [linkError, setLinkError] = useState<string | null>(null);
 
   async function handleOpenSource() {
@@ -119,6 +130,50 @@ export function AboutDialog() {
             </ul>
           ) : toolsLoading ? null : (
             <p className={styles.hint}>{t("about.toolsEmpty")}</p>
+          )}
+        </section>
+
+        <section className={styles.section}>
+          <h3 className={styles.sectionTitle}>{t("update.sectionTitle")}</h3>
+          <div className={styles.updateRow}>
+            {update.statusText && (
+              <span className={styles.updateStatus}>{update.statusText}</span>
+            )}
+            {update.state.phase === "available" ? (
+              <Button
+                variant="primary"
+                size="sm"
+                icon={<Download size={14} aria-hidden="true" />}
+                onClick={update.download}
+                disabled={!isDesktopRuntime()}
+              >
+                {t("update.download")}
+              </Button>
+            ) : update.ready ? (
+              <Button
+                variant="primary"
+                size="sm"
+                icon={<RotateCcw size={14} aria-hidden="true" />}
+                onClick={update.install}
+              >
+                {t("update.installNow")}
+              </Button>
+            ) : (
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<RefreshCw size={14} aria-hidden="true" />}
+                onClick={update.check}
+                disabled={update.busy || !isDesktopRuntime()}
+              >
+                {update.state.phase === "checking"
+                  ? t("update.checking")
+                  : t("update.check")}
+              </Button>
+            )}
+          </div>
+          {update.errorText && (
+            <p className={styles.error}>{update.errorText}</p>
           )}
         </section>
 

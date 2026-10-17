@@ -67,6 +67,8 @@ fn init_database(app: &tauri::AppHandle) -> Result<db::Database, Box<dyn std::er
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let database = init_database(app.handle())?;
             app.manage(database);

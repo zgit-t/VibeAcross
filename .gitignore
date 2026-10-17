@@ -42,3 +42,7 @@ src-tauri/gen/schemas/
 
 # 本地文档（不上传）
 docs/
+
+# 更新签名私钥（严禁入库，仅保留在本地/CI 密钥存储）
+*.key
+*.key.pub

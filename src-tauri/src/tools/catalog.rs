@@ -284,7 +284,7 @@ const CATALOG: &[ToolDefinition] = &[
         id: "opencode-desktop",
         name: "OpenCode Desktop",
         vendor: "OpenCode",
-        description: "OpenCode 官方桌面应用（图形界面），与 OpenCode 命令行工具相互独立。",
+        description: "OpenCode 官方桌面应用（图形界面），与 OpenCode 命令行工具共用同一份本地会话存储。",
         tool_type: ToolType::Desktop,
         // 桌面应用不注册 PATH 命令，绝不使用 CLI 的 `opencode` 命令来识别它。
         commands: &[],
@@ -316,7 +316,7 @@ const CATALOG: &[ToolDefinition] = &[
             "可受控启动，但未核实 OpenCode 桌面应用的项目目录启动参数，无法自动打开指定项目；请在应用内手动打开该目录。",
         ),
         session_resume: SessionResumePlan::Unsupported(
-            "OpenCode 桌面应用为图形界面，其内嵌服务与命令行会话接口不等同；官方未公开可用于脚本的会话创建 / 恢复机制。",
+            "OpenCode 桌面应用与命令行工具共用同一份本地会话存储；其内嵌服务仅监听随机回环端口并使用随机生成的密码，外部进程无法连接，因此不提供脚本化的会话创建 / 恢复 / 改名 / 删除，仅可只读枚举历史会话。",
         ),
     },
 ];

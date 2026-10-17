@@ -512,6 +512,7 @@ fn settings_roundtrip_and_validation() {
             show_last_context_on_startup: true,
             auto_restore_last_context: true,
             language: Some("en".into()),
+            auto_update: false,
         },
     )
     .unwrap();
@@ -531,6 +532,7 @@ fn settings_roundtrip_and_validation() {
             show_last_context_on_startup: false,
             auto_restore_last_context: false,
             language: None,
+            auto_update: false,
         },
     )
     .unwrap_err();
@@ -548,6 +550,7 @@ fn settings_roundtrip_and_validation() {
             show_last_context_on_startup: false,
             auto_restore_last_context: false,
             language: None,
+            auto_update: false,
         },
     )
     .unwrap();
@@ -571,6 +574,7 @@ fn settings_rejects_invalid_language() {
             show_last_context_on_startup: false,
             auto_restore_last_context: false,
             language: Some("fr-FR".into()),
+            auto_update: false,
         },
     )
     .unwrap_err();
@@ -611,6 +615,7 @@ fn tasks_and_settings_persist_across_reopen() {
                 show_last_context_on_startup: true,
                 auto_restore_last_context: true,
                 language: Some("en-US".to_string()),
+                auto_update: false,
             },
         )
         .unwrap();

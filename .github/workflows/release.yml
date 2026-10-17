@@ -1,0 +1,131 @@
+name: Release
+
+# 推送 v* 标签时构建已签名的安装包，校验通过后再发布 Release 与 latest.json。
+# 应用内更新器端点：
+#   https://github.com/zgit-t/VibeAcross/releases/latest/download/latest.json
+# 发布流程（按顺序，任一步失败即中止，不会上传任何资产）：
+#   1. 确认在 v* 标签上运行；
+#   2. 校验 TAURI_SIGNING_PRIVATE_KEY / _PASSWORD 两个 Secret 均已配置；
+#   3. 清理 bundle 目录中可能由缓存恢复的旧 *.sig，避免残留签名被误发布；
+#   4. 记录构建开始时间，执行 `npm run tauri:build`（生成已签名安装包）；
+#   5. node scripts/verify-update-release.mjs 做真实 minisign 验签、版本一致性、
+#      签名新鲜度检查，并在通过后生成 latest.json 与 release-assets.txt；
+#   6. 用 gh 发布已校验的资产。
+#
+# 与旧版（tauri-action 一步完成 build+upload）的区别：tauri-action 无法在「构建完成」
+# 与「上传」之间插入校验，构建失败或签名失败时可能连同残留签名一起上传。这里改为
+# 显式 build -> verify -> publish，确保只有通过密码学校验的资产才会被发布。
+#
+# 更新包：bundle.createUpdaterArtifacts 为 true，故 NSIS 的 *.exe 由更新器复用，
+# 签名为同名 .exe.sig；latest.json 的 signature 必须是 .sig 的**内容**。
+#
+# 需要在仓库 Secrets 中配置（Settings -> Secrets and variables -> Actions）：
+#   - TAURI_SIGNING_PRIVATE_KEY：签名私钥内容（vibeacross-updater.key 全文）
+#   - TAURI_SIGNING_PRIVATE_KEY_PASSWORD：私钥密码
+# 公钥已写入 src-tauri/tauri.conf.json 的 plugins.updater.pubkey，两者必须成对。
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 确认在发布标签上运行
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" != refs/tags/v* ]]; then
+            echo "::error::请通过推送 v* 标签触发本工作流（当前 ref: ${GITHUB_REF}）"
+            exit 1
+          fi
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: 校验签名密钥已配置
+        shell: pwsh
+        env:
+          SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          SIGNING_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          # 未配置的 Secret 会展开为空字符串，这里提前失败以避免"空密码"式静默降级。
+          if ([string]::IsNullOrWhiteSpace($env:SIGNING_KEY)) {
+            throw "缺少 TAURI_SIGNING_PRIVATE_KEY：请在仓库 Secrets 中配置更新签名私钥内容。"
+          }
+          if ([string]::IsNullOrWhiteSpace($env:SIGNING_PASSWORD)) {
+            throw "缺少 TAURI_SIGNING_PRIVATE_KEY_PASSWORD：请配置更新私钥密码。"
+          }
+          Write-Host "签名密钥已配置。"
+
+      - name: 校验版本号一致
+        shell: pwsh
+        run: node scripts/verify-update-release.mjs --only-check-versions
+
+      - name: 清理残留的旧签名
+        shell: pwsh
+        run: |
+          $bundle = "src-tauri/target/release/bundle"
+          if (Test-Path -LiteralPath $bundle) {
+            Get-ChildItem -LiteralPath $bundle -Recurse -Filter *.sig -File |
+              ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
+            Write-Host "已清理 $bundle 下的旧签名文件。"
+          }
+
+      - name: 构建已签名安装包
+        id: build
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          "build_started_at=$([DateTime]::UtcNow.ToString('o'))" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          npm run tauri:build
+
+      - name: 校验签名并生成更新清单
+        shell: pwsh
+        run: |
+          node scripts/verify-update-release.mjs `
+            --bundle-dir src-tauri/target/release/bundle `
+            --repo "${{ github.repository }}" `
+            --tag "${{ github.ref_name }}" `
+            --since "${{ steps.build.outputs.build_started_at }}" `
+            --check-repo-versions `
+            --out latest.json `
+            --assets-out release-assets.txt
+
+      - name: 发布已校验的资产
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $assets = @(Get-Content -LiteralPath release-assets.txt |
+            Where-Object { $_ -and (Test-Path -LiteralPath $_) })
+          if ($assets.Count -lt 3) {
+            throw "待上传资产不足（$($assets.Count) 个），已中止发布。"
+          }
+          gh release create "${{ github.ref_name }}" @assets `
+            --title "VibeAcross ${{ github.ref_name }}" `
+            --notes "See the assets to download and install this version."

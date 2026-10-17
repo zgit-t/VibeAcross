@@ -1,5 +1,6 @@
 import { useApp } from "../../context/AppContext";
 import { AboutDialog } from "../AboutDialog";
+import { UpdateReadyDialog } from "../../features/update/UpdateReadyDialog";
 import { Sidebar } from "./Sidebar";
 import { OverviewPage } from "../../pages/OverviewPage";
 import { ProjectsPage } from "../../pages/ProjectsPage";
@@ -40,6 +41,7 @@ export function AppShell() {
         <div className={styles.content}>{renderView(activeView)}</div>
       </main>
       <AboutDialog />
+      <UpdateReadyDialog />
     </div>
   );
 }
