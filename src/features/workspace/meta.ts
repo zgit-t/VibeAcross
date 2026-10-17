@@ -3,7 +3,6 @@ import { t } from "../../i18n/translate";
 import type {
   RestoreLevel,
   RestoreStatus,
-  SessionResumeSupport,
   ToolEntry,
   WorkspaceSession,
 } from "../../types/domain";
@@ -31,18 +30,6 @@ export const RESTORE_LEVEL_TONE: Record<RestoreLevel, WorkspaceTone> = {
 export const RESTORE_STATUS_KEY: Record<RestoreStatus, TranslationKey> = {
   success: "restoreStatus.success",
   failed: "restoreStatus.failed",
-};
-
-/** 会话恢复支持情况 → 翻译键。 */
-export const SESSION_RESUME_KEY: Record<SessionResumeSupport, TranslationKey> = {
-  unsupported: "sessionResume.unsupported",
-  documentedUnverified: "sessionResume.documentedUnverified",
-};
-
-/** 会话恢复支持情况 → 徽标色调。 */
-export const SESSION_RESUME_TONE: Record<SessionResumeSupport, WorkspaceTone> = {
-  unsupported: "neutral",
-  documentedUnverified: "warning",
 };
 
 /** 工作上下文当前可恢复状态（来自真实检查结果，而非静态演示数据）。 */

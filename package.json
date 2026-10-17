@@ -1,7 +1,7 @@
 {
   "name": "vibeacross",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "VibeAcross - 面向 Vibe Coding 开发者的本地桌面工作区管理工具",
   "scripts": {

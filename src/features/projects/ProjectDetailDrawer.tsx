@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Check,
   Copy,
   FolderOpen,
   FolderSearch,
-  Play,
   RefreshCw,
   Star,
   StarOff,
@@ -20,15 +19,9 @@ import { Button } from "../../components/ui/Button";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { Drawer } from "../../components/ui/Drawer";
 import { Notice } from "../../components/ui/Notice";
-import { SelectField } from "../../components/ui/SelectField";
 import { pickDirectory } from "../../services/dialog";
 import { copyText } from "../../services/clipboard";
 import { toErrorMessage } from "../../services/backend";
-import {
-  LAUNCH_METHOD_KEY,
-  LAUNCH_SUPPORT_KEY,
-  LAUNCH_SUPPORT_TONE,
-} from "../tools/data";
 import {
   PATH_STATUS_KEY,
   PATH_STATUS_TONE,
@@ -39,7 +32,7 @@ import {
 } from "./health";
 import { formatDateTime } from "../../utils/format";
 import { ProjectTasksSection } from "./ProjectTasksSection";
-import { buildLaunchNotice } from "./launchNotice";
+import { ProjectSessionSection } from "../aiSessions/ProjectSessionSection";
 import type {
   Project,
   ProjectHealth,
@@ -66,8 +59,6 @@ export function ProjectDetailDrawer({
     setFavorite,
     relocate,
     remove,
-    setProjectTool,
-    launchProject,
     openDirectory,
     checkHealth,
   } = useProjects();
@@ -78,12 +69,7 @@ export function ProjectDetailDrawer({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [launchNotice, setLaunchNotice] = useState<{
-    title: string;
-    message: string;
-  } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [launching, setLaunching] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [health, setHealth] = useState<ProjectHealth | null>(null);
   const [checking, setChecking] = useState(false);
@@ -95,35 +81,6 @@ export function ProjectDetailDrawer({
   const pathStatus: ProjectPathStatus =
     health?.pathStatus ?? (project?.pathExists ? "ok" : "missing");
   const toolHealth: ProjectToolHealth = health?.toolStatus ?? "notConfigured";
-
-  // 只有「已检测到」的工具可以关联为项目默认工具。
-  const installedTools = useMemo(
-    () => tools.filter((tool) => tool.installed),
-    [tools],
-  );
-  const selectedTool = project?.defaultToolId
-    ? tools.find((tool) => tool.id === project.defaultToolId) ?? null
-    : null;
-
-  const toolOptions = useMemo(() => {
-    const options = installedTools.map((tool) => ({
-      value: tool.id,
-      label: tool.name,
-    }));
-    if (
-      project?.defaultToolId &&
-      !options.some((option) => option.value === project.defaultToolId)
-    ) {
-      const found = tools.find((tool) => tool.id === project.defaultToolId);
-      options.unshift({
-        value: project.defaultToolId,
-        label: found
-          ? t("projectDetail.toolCurrentUnavailable", { name: found.name })
-          : t("projectDetail.toolRemoved"),
-      });
-    }
-    return [{ value: "", label: t("projectList.noTool") }, ...options];
-  }, [installedTools, tools, project?.defaultToolId, t]);
 
   // 仅在抽屉「打开某个项目」时载入草稿，避免列表刷新覆盖用户正在编辑的内容。
   useEffect(() => {
@@ -140,7 +97,6 @@ export function ProjectDetailDrawer({
     setName(project.name);
     setDescription(project.description ?? "");
     setError(null);
-    setLaunchNotice(null);
     setConfirmRemove(false);
     setHealth(null);
     setCopied(false);
@@ -212,35 +168,6 @@ export function ProjectDetailDrawer({
       return;
     }
     void run(() => setFavorite(project.id, !project.isFavorite));
-  }
-
-  function handleSetTool(toolId: string | null) {
-    if (!project) {
-      return;
-    }
-    setLaunchNotice(null);
-    void run(async () => {
-      await setProjectTool(project.id, toolId);
-      // 默认工具变化会影响启动能力判定。
-      await runHealth(project.id, false);
-    });
-  }
-
-  async function handleLaunch() {
-    if (!project || !project.defaultToolId) {
-      return;
-    }
-    setLaunching(true);
-    setError(null);
-    setLaunchNotice(null);
-    try {
-      const result = await launchProject(project.id, project.defaultToolId);
-      setLaunchNotice(buildLaunchNotice(result, t, "projectDetail.launched"));
-    } catch (cause) {
-      setError(toErrorMessage(cause, t("projectDetail.launchFailed")));
-    } finally {
-      setLaunching(false);
-    }
   }
 
   async function handleRelocate() {
@@ -481,82 +408,11 @@ export function ProjectDetailDrawer({
               </div>
             </section>
 
-            <section className={styles.section}>
-              <span className={styles.label}>{t("projectDetail.toolsLabel")}</span>
-
-              {installedTools.length === 0 ? (
-                <>
-                  <p className={styles.hint}>{t("projectDetail.noTools")}</p>
-                  <div className={styles.inlineEnd}>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      icon={<Wrench size={14} aria-hidden="true" />}
-                      onClick={() => navigate("tools")}
-                    >
-                      {t("projectDetail.goTools")}
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <SelectField
-                    label={t("projectDetail.defaultToolLabel")}
-                    options={toolOptions}
-                    value={project.defaultToolId ?? ""}
-                    onChange={(event) =>
-                      handleSetTool(event.target.value || null)
-                    }
-                    disabled={busy}
-                    hint={t("projectDetail.defaultToolHint")}
-                  />
-
-                  {selectedTool && (
-                    <div className={styles.launchStatus}>
-                      <Badge
-                        tone={LAUNCH_SUPPORT_TONE[selectedTool.launch.support]}
-                      >
-                        {t(LAUNCH_SUPPORT_KEY[selectedTool.launch.support])}
-                      </Badge>
-                      {selectedTool.launch.method && (
-                        <span className={styles.launchMethod}>
-                          {t(LAUNCH_METHOD_KEY[selectedTool.launch.method])}
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  {selectedTool &&
-                    selectedTool.launch.support !== "supported" && (
-                      <p className={styles.hint}>{selectedTool.launch.reason}</p>
-                    )}
-
-                  {launchNotice && (
-                    <Notice tone="success" title={launchNotice.title}>
-                      {launchNotice.message}
-                    </Notice>
-                  )}
-
-                  <div className={styles.inlineEnd}>
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      icon={<Play size={14} aria-hidden="true" />}
-                      onClick={handleLaunch}
-                      disabled={
-                        busy ||
-                        launching ||
-                        !selectedTool ||
-                        selectedTool.launch.support !== "supported" ||
-                        !isPathHealthy(pathStatus)
-                      }
-                    >
-                      {t("projectDetail.launch")}
-                    </Button>
-                  </div>
-                </>
-              )}
-            </section>
+            <ProjectSessionSection
+              project={project}
+              tools={tools}
+              pathHealthy={isPathHealthy(pathStatus)}
+            />
 
             <ProjectTasksSection
               projectId={project.id}

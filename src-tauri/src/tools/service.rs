@@ -235,7 +235,11 @@ fn launch_info(
                     "将以项目目录作为参数打开该应用。".to_string()
                 }
                 LaunchMethod::WorkingDirectory => {
-                    "将在项目目录中以新的控制台窗口启动该命令行工具。".to_string()
+                    if tool_type == ToolType::Desktop {
+                        "将以项目目录作为工作目录启动该应用；若应用不支持自动打开项目，请在应用内手动选择该目录。".to_string()
+                    } else {
+                        "将在项目目录中以新的控制台窗口启动该命令行工具。".to_string()
+                    }
                 }
             },
         },

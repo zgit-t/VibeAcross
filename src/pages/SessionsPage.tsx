@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, RotateCcw, Wrench } from "lucide-react";
+import { Plus, RotateCcw } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { useProjects } from "../context/ProjectsContext";
 import { useTools } from "../context/ToolsContext";
@@ -7,18 +7,11 @@ import { useWorkspace } from "../context/WorkspaceContext";
 import { useI18n } from "../i18n";
 import { PageHeader } from "../components/layout/PageHeader";
 import { Section } from "../components/layout/Section";
-import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Notice } from "../components/ui/Notice";
 import { SessionDialog } from "../features/workspace/SessionDialog";
 import { SessionList } from "../features/workspace/SessionList";
-import {
-  RESTORE_LEVEL_KEY,
-  RESTORE_LEVEL_TONE,
-  SESSION_RESUME_KEY,
-  SESSION_RESUME_TONE,
-} from "../features/workspace/meta";
 import type { ToolEntry, WorkspaceSession } from "../types/domain";
 import styles from "./SessionsPage.module.css";
 
@@ -66,11 +59,6 @@ export function SessionsPage() {
     }
     return map;
   }, [projects]);
-
-  const detectedTools = useMemo(
-    () => tools.filter((tool) => tool.installed || tool.isCustom),
-    [tools],
-  );
 
   function openCreate() {
     setEditing(null);
@@ -141,45 +129,6 @@ export function SessionsPage() {
           />
         )}
       </Section>
-
-      <Section
-        title={t("sessions.capabilityTitle")}
-        description={t("sessions.capabilityDescription")}
-      >
-        {detectedTools.length > 0 ? (
-          <ul className={styles.capabilityList}>
-            {detectedTools.map((tool) => (
-              <li key={tool.id} className={styles.capabilityRow}>
-                <div className={styles.capabilityHead}>
-                  <span className={styles.capabilityName}>
-                    <Wrench size={14} aria-hidden="true" />
-                    {tool.name}
-                  </span>
-                  <Badge tone={RESTORE_LEVEL_TONE[tool.restore.level]}>
-                    {t(RESTORE_LEVEL_KEY[tool.restore.level])}
-                  </Badge>
-                  <Badge tone={SESSION_RESUME_TONE[tool.restore.session]}>
-                    {t(SESSION_RESUME_KEY[tool.restore.session])}
-                  </Badge>
-                </div>
-                <p className={styles.capabilityReason}>{tool.restore.levelReason}</p>
-                <p className={styles.capabilityReason}>
-                  {tool.restore.sessionReason}
-                </p>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <EmptyState
-            compact
-            icon={Wrench}
-            title={t("sessions.noToolsTitle")}
-            description={t("sessions.noToolsDescription")}
-          />
-        )}
-      </Section>
-
-      <Notice tone="info">{t("sessions.notice")}</Notice>
 
       <SessionDialog
         open={dialogOpen}

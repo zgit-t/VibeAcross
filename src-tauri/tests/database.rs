@@ -18,7 +18,7 @@ fn migrations_apply_and_are_idempotent() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 6);
+    assert_eq!(version, migrations::latest_version());
 
     // 再次执行迁移不应报错，也不应重复建表。
     migrations::run(&conn).unwrap();
@@ -29,6 +29,8 @@ fn migrations_apply_and_are_idempotent() {
         "tool_installations",
         "tasks",
         "workspace_sessions",
+        "project_tools",
+        "sessions",
     ] {
         let count: i64 = conn
             .query_row(
@@ -50,8 +52,9 @@ fn migrations_apply_and_are_idempotent() {
         .unwrap();
     assert_eq!(has_column, 1, "projects 应包含 default_tool_id 列");
 
-    // 版本 4 新增任务表；版本 5 新增工作上下文表；版本 6 移除活动表。
-    for table in ["tasks", "workspace_sessions"] {
+    // 版本 4 新增任务表；版本 5 新增工作上下文表；版本 6 移除活动表；
+    // 版本 7 新增项目工具关联与会话表。
+    for table in ["tasks", "workspace_sessions", "project_tools", "sessions"] {
         let exists: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
@@ -97,7 +100,7 @@ fn project_tool_migration_preserves_existing_projects() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 6);
+    assert_eq!(version, migrations::latest_version());
 
     // 旧数据保留，且新列默认为 NULL。
     let (name, tool): (String, Option<String>) = conn
@@ -151,7 +154,7 @@ fn workspace_migration_preserves_existing_v4_data() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 6);
+    assert_eq!(version, migrations::latest_version());
 
     // 升级不破坏既有项目与任务数据。
     let project: String = conn
@@ -179,12 +182,103 @@ fn workspace_migration_preserves_existing_v4_data() {
         .unwrap();
     assert_eq!(sessions, 0);
 
+    // 版本 7 新增的项目工具关联与会话表也已创建且为空。
+    for table in ["project_tools", "sessions"] {
+        let count: i64 = conn
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 0, "表 {table} 应为空");
+    }
+
     // 重复执行保持幂等。
     migrations::run(&conn).unwrap();
     let again: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(again, 6);
+    assert_eq!(again, migrations::latest_version());
+}
+
+#[test]
+fn current_tool_migration_backfills_associations() {
+    // 构造一个「版本 7」的数据库：已有项目与工具安装，但「当前工具」尚未写入
+    // 关联表（本次修复之前的真实数据）。
+    let workspace = temp_dir();
+    let db_path = workspace.path().join("v7.db");
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    for sql in [
+        include_str!("../migrations/0001_init.sql"),
+        include_str!("../migrations/0002_tools.sql"),
+        include_str!("../migrations/0003_project_tools.sql"),
+        include_str!("../migrations/0004_tasks_activity.sql"),
+        include_str!("../migrations/0005_workspace_sessions.sql"),
+        include_str!("../migrations/0006_drop_activity.sql"),
+        include_str!("../migrations/0007_session_model.sql"),
+    ] {
+        conn.execute_batch(sql).unwrap();
+    }
+    conn.pragma_update(None, "user_version", 7).unwrap();
+
+    let now = "2026-01-01T00:00:00.000Z";
+    for (id, tool) in [("tool-a", "cursor"), ("tool-b", "trae")] {
+        conn.execute(
+            "INSERT INTO tool_installations
+                (id, tool_id, name, vendor, description, tool_type, source, status, is_custom, is_default, created_at, updated_at)
+             VALUES (?1, ?2, ?2, '', '', 'cli', 'system', 'ready', 0, 0, ?3, ?3)",
+            [id, tool, now],
+        )
+        .unwrap();
+    }
+    // p1：当前工具指向有效安装、但无关联 → 应补建关联。
+    // p2：当前工具指向已不存在的工具 → 不应补建。
+    // p3：已有与当前工具一致的关联 → 不应重复创建。
+    for (id, path, tool) in [
+        ("p1", "C:\\p1", "tool-a"),
+        ("p2", "C:\\p2", "ghost-tool"),
+        ("p3", "C:\\p3", "tool-b"),
+    ] {
+        conn.execute(
+            "INSERT INTO projects
+                (id, name, path, created_at, updated_at, description, is_favorite, default_tool_id)
+             VALUES (?1, ?1, ?2, ?3, ?3, NULL, 0, ?4)",
+            [id, path, now, tool],
+        )
+        .unwrap();
+    }
+    conn.execute(
+        "INSERT INTO project_tools (id, project_id, tool_id, created_at, updated_at)
+         VALUES ('pt3', 'p3', 'tool-b', ?1, ?1)",
+        [now],
+    )
+    .unwrap();
+
+    migrations::run(&conn).unwrap();
+
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, migrations::latest_version());
+
+    let count = |project: &str| -> i64 {
+        conn.query_row(
+            "SELECT COUNT(*) FROM project_tools WHERE project_id = ?1",
+            [project],
+            |row| row.get(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(count("p1"), 1, "p1 的当前工具应被补建为关联");
+    assert_eq!(count("p2"), 0, "当前工具失效时不应补建关联");
+    assert_eq!(count("p3"), 1, "已有的一致关联不应被重复创建");
+
+    // 补建的关联确实指向该项目的当前工具。
+    let bound_tool: String = conn
+        .query_row(
+            "SELECT tool_id FROM project_tools WHERE project_id = 'p1'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(bound_tool, "tool-a");
 }
 
 #[test]

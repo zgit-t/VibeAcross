@@ -15,8 +15,8 @@ import { Switch } from "../components/ui/Switch";
 import { ProjectList } from "../features/projects/ProjectList";
 import { AddProjectDialog } from "../features/projects/AddProjectDialog";
 import { ProjectDetailDrawer } from "../features/projects/ProjectDetailDrawer";
+import { RunSessionFlow } from "../features/aiSessions/RunSessionFlow";
 import { filterProjects } from "../features/projects/filter";
-import { buildLaunchNotice } from "../features/projects/launchNotice";
 import { toErrorMessage } from "../services/backend";
 import { copyText } from "../services/clipboard";
 import type { Project, ProjectSort } from "../types/domain";
@@ -36,7 +36,6 @@ export function ProjectsPage() {
     remove,
     touchOpened,
     setProjectTool,
-    launchProject,
     openDirectory,
   } = useProjects();
   const { tools } = useTools();
@@ -59,8 +58,8 @@ export function ProjectsPage() {
   const [pendingRemove, setPendingRemove] = useState<Project | null>(null);
   const [removing, setRemoving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [launchingId, setLaunchingId] = useState<string | null>(null);
-  const [launchNotice, setLaunchNotice] = useState<{
+  const [runProject, setRunProject] = useState<Project | null>(null);
+  const [notice, setNotice] = useState<{
     tone: "success" | "danger";
     title: string;
     message?: string;
@@ -136,31 +135,11 @@ export function ProjectsPage() {
 
   async function handleSetTool(project: Project, toolId: string | null) {
     setActionError(null);
-    setLaunchNotice(null);
+    setNotice(null);
     try {
       await setProjectTool(project.id, toolId);
     } catch (cause) {
       setActionError(toErrorMessage(cause, t("projects.setToolFailed")));
-    }
-  }
-
-  async function handleLaunch(project: Project, toolId: string) {
-    setLaunchingId(project.id);
-    setLaunchNotice(null);
-    try {
-      const result = await launchProject(project.id, toolId);
-      setLaunchNotice({
-        tone: "success",
-        ...buildLaunchNotice(result, t),
-      });
-    } catch (cause) {
-      setLaunchNotice({
-        tone: "danger",
-        title: t("projects.launchFailedTitle"),
-        message: toErrorMessage(cause),
-      });
-    } finally {
-      setLaunchingId(null);
     }
   }
 
@@ -177,7 +156,7 @@ export function ProjectsPage() {
     setActionError(null);
     const ok = await copyText(project.path);
     if (ok) {
-      setLaunchNotice({ tone: "success", title: t("health.copied") });
+      setNotice({ tone: "success", title: t("health.copied") });
     } else {
       setActionError(t("health.copyFailed"));
     }
@@ -224,9 +203,9 @@ export function ProjectsPage() {
 
       {actionError && <Notice tone="danger">{actionError}</Notice>}
 
-      {launchNotice && (
-        <Notice tone={launchNotice.tone} title={launchNotice.title}>
-          {launchNotice.message}
+      {notice && (
+        <Notice tone={notice.tone} title={notice.title}>
+          {notice.message}
         </Notice>
       )}
 
@@ -282,7 +261,6 @@ export function ProjectsPage() {
             showActions
             showLaunch
             tools={tools}
-            launchingId={launchingId}
             onSelect={openDetail}
             onRename={openDetail}
             onToggleFavorite={handleToggleFavorite}
@@ -290,7 +268,7 @@ export function ProjectsPage() {
             onOpenDir={handleOpenDir}
             onCopyPath={handleCopyPath}
             onSetTool={handleSetTool}
-            onLaunch={handleLaunch}
+            onRun={(project) => setRunProject(project)}
           />
         ) : (
           <EmptyState
@@ -322,6 +300,25 @@ export function ProjectsPage() {
         project={selected}
         open={selected !== null}
         onClose={() => setSelectedId(null)}
+      />
+
+      <RunSessionFlow
+        key={runProject?.id ?? "none"}
+        open={runProject !== null}
+        project={runProject}
+        initialToolId={runProject?.defaultToolId ?? null}
+        onClose={() => setRunProject(null)}
+        onToolChange={(toolId) => {
+          const target = runProject;
+          if (!target) {
+            return;
+          }
+          // 立即反馈，同时持久化为项目的当前工具。
+          setRunProject((current) =>
+            current ? { ...current, defaultToolId: toolId } : current,
+          );
+          void handleSetTool(target, toolId);
+        }}
       />
 
       <ConfirmDialog

@@ -18,11 +18,15 @@
   white-space: nowrap;
 }
 
+/* 列表容器同时作为卡片布局的容器查询上下文：
+   卡片是并排双栏还是上下堆叠，取决于容器实际可用宽度，
+   而不是整个窗口宽度（侧栏占宽时也能正确切换到堆叠布局）。 */
 .listWrap {
   background: var(--color-panel);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   overflow: hidden;
+  container-type: inline-size;
 }
 
 .loading {
@@ -34,32 +38,48 @@
 }
 
 .list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
   margin: 0;
-  padding: 0;
+  padding: var(--space-3);
   list-style: none;
 }
 
+/* 工具卡片 = 左侧「信息栏」+ 右侧「操作栏」，中间一条竖向分隔线。
+   两栏宽度由统一的 Grid 列定义决定（而非各自按内容计算）：
+   左栏弹性自适应、右栏固定区间宽度，因此无论工具是否已检测、标签或按钮
+   多少，分隔线位置与整体分栏结构在所有卡片上完全一致。
+   两栏高度对齐（align-items: stretch），分隔线随卡片高度延伸；
+   overflow: hidden 让分隔线止于圆角内部，不穿出卡片边缘。 */
 .row {
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) auto auto auto;
-  align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.list li:last-child .row {
-  border-bottom: none;
+  grid-template-columns: minmax(0, 1fr) clamp(240px, 28%, 320px);
+  align-items: stretch;
+  background: var(--color-content-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
 }
 
 .row:hover {
   background: var(--color-hover);
 }
 
+/* 左栏：图标 + 全部工具信息。由 Grid 弹性列自适应可用空间。 */
+.info {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+}
+
 .icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 auto;
   width: 32px;
   height: 32px;
   border-radius: var(--radius-md);
@@ -72,27 +92,50 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
+/* 第一行：名称 + 默认 / 来源 / 类型标签必须同一行，禁止换行。 */
 .titleRow {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .name {
   color: var(--color-text);
   font-weight: 600;
   font-size: var(--font-size-sm);
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 名称可收缩省略，其余标签（默认 / 来源 / 类型）保持固有宽度不被压缩。 */
+.titleRow > :not(.name) {
+  flex-shrink: 0;
 }
 
 .type {
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
+  white-space: nowrap;
 }
 
+/* 第二行：检测状态 + 启动能力。 */
+.statusCell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* 第三行：工具路径 / 命令名称。长路径视觉截断，完整内容见 title，可选中复制。 */
 .description {
   color: var(--color-text-secondary);
   font-size: var(--font-size-xs);
@@ -101,17 +144,12 @@
   white-space: nowrap;
 }
 
+/* 第四行：供应商 · 版本 · 检测时间 · 检测说明。 */
 .meta {
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.vendor {
-  color: var(--color-text-secondary);
-  font-size: var(--font-size-xs);
   white-space: nowrap;
 }
 
@@ -121,20 +159,37 @@
   cursor: help;
 }
 
-.statusCell {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
+/* 右栏：全部操作按钮集中于此，右对齐。
+   宽度由卡片 Grid 的固定区间列统一约束，与工具状态、标签数量、
+   操作数量无关，因此所有卡片的右栏起始位置一致。 */
 .actions {
   display: flex;
-  align-items: center;
-  gap: var(--space-1);
   flex-wrap: wrap;
+  align-items: center;
+  align-content: center;
   justify-content: flex-end;
+  gap: var(--space-1) var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-left: 1px solid var(--color-border);
+}
+
+/* 按钮保持固有宽度，宁可换行也不压缩文字 / 图标。 */
+.actions > * {
+  flex-shrink: 0;
+}
+
+/* 窄容器：两栏无法再保持合理最小宽度时，所有卡片统一切换为上下布局，
+   竖向分隔线改为信息栏与操作栏之间的横向分隔线。 */
+@container (max-width: 640px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .actions {
+    justify-content: flex-start;
+    border-left: none;
+    border-top: 1px solid var(--color-border);
+  }
 }
 
 .linkButton {
@@ -152,37 +207,4 @@
   margin: 0;
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
-}
-
-@media (max-width: 980px) {
-  .row {
-    grid-template-columns: 32px minmax(0, 1fr) auto;
-    grid-template-areas:
-      "icon main status"
-      ". vendor vendor"
-      ". actions actions";
-    row-gap: var(--space-2);
-  }
-
-  .icon {
-    grid-area: icon;
-  }
-
-  .main {
-    grid-area: main;
-  }
-
-  .vendor {
-    grid-area: vendor;
-  }
-
-  .row > :nth-child(4) {
-    grid-area: status;
-    justify-self: end;
-  }
-
-  .actions {
-    grid-area: actions;
-    justify-content: flex-start;
-  }
 }

@@ -345,8 +345,6 @@ export function SettingsPage() {
           </Button>
         </SettingsRow>
       </SettingsGroup>
-
-      <Notice tone="info">{t("settings.footerNotice")}</Notice>
     </div>
   );
 }

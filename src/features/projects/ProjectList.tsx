@@ -17,6 +17,12 @@ import { IconButton } from "../../components/ui/IconButton";
 import { Menu } from "../../components/ui/Menu";
 import { useI18n } from "../../i18n";
 import { formatDateTime, formatRelativeTime } from "../../utils/format";
+import {
+  DEFAULT_TOOL_ISSUE_KEY,
+  DEFAULT_TOOL_LAUNCH_HINT_KEY,
+  resolveDefaultTool,
+  toolIsLaunchable,
+} from "./health";
 import styles from "./ProjectList.module.css";
 
 interface ProjectListProps {
@@ -27,8 +33,6 @@ interface ProjectListProps {
   showLaunch?: boolean;
   /** 可用的开发工具列表（用于行内选择与启动）。 */
   tools?: ToolEntry[];
-  /** 正在启动中的项目 id，用于禁用重复点击。 */
-  launchingId?: string | null;
   /** 点击项目主体（查看详情）。 */
   onSelect?: (project: Project) => void;
   onRename?: (project: Project) => void;
@@ -40,8 +44,8 @@ interface ProjectListProps {
   onCopyPath?: (project: Project) => void;
   /** 设置项目的默认工具（null 表示清除）。 */
   onSetTool?: (project: Project, toolId: string | null) => void;
-  /** 使用指定工具启动项目。 */
-  onLaunch?: (project: Project, toolId: string) => void;
+  /** 打开会话界面（历史会话 + 新建会话），不直接启动工具。 */
+  onRun?: (project: Project) => void;
 }
 
 /** 项目列表，用于 Overview 与 Projects 页面。 */
@@ -50,7 +54,6 @@ export function ProjectList({
   showActions = false,
   showLaunch = false,
   tools,
-  launchingId,
   onSelect,
   onRename,
   onToggleFavorite,
@@ -58,12 +61,12 @@ export function ProjectList({
   onOpenDir,
   onCopyPath,
   onSetTool,
-  onLaunch,
+  onRun,
 }: ProjectListProps) {
   const { t } = useI18n();
-  // 只有「已确认可受控启动」的工具才出现在行内快速启动中。
+  // 只有「已确认已检测到且可受控启动」的工具才出现在行内快速启动中。
   const launchable = useMemo(
-    () => (tools ?? []).filter((tool) => tool.launch.support === "supported"),
+    () => (tools ?? []).filter(toolIsLaunchable),
     [tools],
   );
 
@@ -74,31 +77,36 @@ export function ProjectList({
   return (
     <ul className={styles.list}>
       {projects.map((project) => {
+        const defaultInfo = resolveDefaultTool(project.defaultToolId, tools ?? []);
+        const knownDefault = defaultInfo.state === "ready";
         const options: Array<{ value: string; label: string }> = [
           { value: "", label: t("projectList.noTool") },
           ...launchable.map((tool) => ({ value: tool.id, label: tool.name })),
         ];
-        const knownDefault =
-          project.defaultToolId !== null &&
-          launchable.some((tool) => tool.id === project.defaultToolId);
-        if (project.defaultToolId && !knownDefault) {
+        if (
+          project.defaultToolId &&
+          defaultInfo.state !== "unset" &&
+          defaultInfo.state !== "ready"
+        ) {
           options.splice(1, 0, {
             value: project.defaultToolId,
-            label: t("projectList.defaultUnavailable"),
+            label: t(DEFAULT_TOOL_ISSUE_KEY[defaultInfo.state]),
           });
         }
 
+        // 未设置默认工具时同样允许进入运行入口，由用户在会话界面中选择工具；
+        // 只要存在已识别且可启动的工具即可，不再仅凭默认工具为空判定为不可运行。
         const canLaunch =
-          Boolean(project.defaultToolId) &&
-          knownDefault &&
           project.pathExists &&
-          Boolean(onLaunch) &&
-          launchingId !== project.id;
+          Boolean(onRun) &&
+          (knownDefault || launchable.length > 0);
         const launchHint = !project.pathExists
           ? t("projectList.launchNoDir")
-          : !knownDefault
-            ? t("projectList.launchPickTool")
-            : t("projectList.launch", { name: project.name });
+          : defaultInfo.state === "ready"
+            ? t("projectList.launch", { name: project.name })
+            : defaultInfo.state === "unset"
+              ? t("projectList.launchPickTool")
+              : t(DEFAULT_TOOL_LAUNCH_HINT_KEY[defaultInfo.state]);
 
         return (
           <li key={project.id} className={rowClass}>
@@ -181,11 +189,7 @@ export function ProjectList({
                 <IconButton
                   label={launchHint}
                   size="sm"
-                  onClick={() => {
-                    if (project.defaultToolId) {
-                      onLaunch?.(project, project.defaultToolId);
-                    }
-                  }}
+                  onClick={() => onRun?.(project)}
                   disabled={!canLaunch}
                 >
                   <Play size={14} aria-hidden="true" />

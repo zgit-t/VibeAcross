@@ -1,97 +1,299 @@
 # VibeAcross
 
-面向 Vibe Coding 开发者的本地桌面工作区管理工具，用于统一管理本地开发项目、AI 编程工具、开发任务与工作上下文。
+**English** | [简体中文](./README.zh-CN.md)
 
-- **目标平台**：Windows 10 / Windows 11
-- **当前阶段**：Phase 8 交付后的维护与修复（功能冻结；已移除活动模块、替换应用图标、校正设置项与工作上下文语义、修复 AI 工具检测与安全启动可靠性、新增本地数据备份与恢复、新增项目健康检查与快捷操作、新增全局只读搜索与应用内联动、完成回归测试与 Windows 打包验收）。进度与验证结果见 `docs/PROJECT_STATUS.md`。
-- **设计原则**：本地优先。数据保存在本机 SQLite，不接入远程服务器，不实现账号、云同步或大模型 API。
+VibeAcross is a **local-first desktop workspace manager** for developers who build software together with AI coding tools ("vibe coding"). It keeps your local projects, the AI coding tools installed on your machine, your tasks, and your work contexts in one place.
 
-## 技术栈
+All data is stored **locally** in a SQLite database on your own computer. There is no server, no account, no cloud sync, and no built-in LLM API.
 
-| 部分 | 技术 |
-| --- | --- |
-| 桌面框架 | Tauri 2 |
-| 前端 | React 19 + TypeScript（严格模式） |
-| 构建 | Vite |
-| 图标 | lucide-react |
-| 后端 | Rust |
-| 数据库 | SQLite（rusqlite，bundled） |
-| 注册表 | winreg（仅 Windows，只读） |
-| 系统对话框 | tauri-plugin-dialog |
-| 样式 | CSS 变量设计令牌 + CSS Modules |
-| 包管理 | npm |
+> **Status:** pre-release (`v0.2.0`). No prebuilt installers are published yet — build from source (see [Installation](#installation)).
 
-## 界面结构
+## Why VibeAcross exists
 
-左侧可折叠导航：Overview / Projects / Tools / Tasks / Sessions，底部为 Settings 与 About。
-支持浅色 / 深色 / 跟随系统主题，以及中文（zh-CN）/ 英文（en-US）界面切换；`Ctrl/Cmd + K` 可打开全局搜索。详细说明见 [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)。
+When you use more than one AI coding tool — a terminal agent, an IDE assistant, a desktop app — each one keeps its own projects, tasks, and history. Switching tools means finding the right folder, the right tool, and the right context all over again.
 
-## 快速开始
+VibeAcross is a single local hub that:
 
-前置条件：Node.js 20+、npm，以及 Rust 工具链（见 `docs/DEVELOPMENT.md`）。
+- Detects the AI coding tools already installed on this machine.
+- Registers local project folders and remembers each project's default tool.
+- Tracks development tasks per project.
+- Saves **work contexts** (project + tool + task) that you can reopen later.
+- Creates, lists, resumes, and renames **native AI sessions** where the tool provides a genuinely supported mechanism — and plainly marks what is **not supported** or **not yet verified**.
+
+### Design goals
+
+- **Local-first.** No remote server, no accounts, no cloud sync, no telemetry, no LLM calls.
+- **Honest capabilities.** The app never invents command-line flags or APIs. Anything unconfirmed is shown as "not verified" instead of being presented as working.
+- **Safe process launching.** Tools are launched with structured argument arrays and an explicit working directory — never by concatenating shell strings.
+- **No silent actions.** The app does not silently switch tools, silently create a new session, or delete native conversations without your consent.
+
+## Core features
+
+- **Project management** — Import local project folders, give them a name and notes, set a default tool, open them in the system file explorer, or copy their path.
+- **Project health** — Check whether a project folder still exists and whether its default tool is ready, and relocate a moved folder without touching your source files.
+- **AI tool detection & configuration** — Detect six built-in tools via `PATH`, common install directories, Windows uninstall registry entries, and shortcuts; add or manually configure a custom tool when automatic detection is not reliable.
+- **Tasks** — Per-project tasks with title, description, status, priority, and due date.
+- **Work contexts (Sessions page)** — Save a project + tool + task combination and restore it later. Level-1 restore reopens the project directory and the selected tool.
+- **Native AI sessions** — In a project's detail view, create / list / resume / rename sessions for tools that support it, with a per-tool capability matrix shown in the UI.
+- **Global search** — Open the read-only search with `Ctrl/Cmd + K` and search project names/notes, task titles/descriptions, and work context names. Project source files are **not** indexed or scanned.
+- **Backup & restore** — Create a single-file, self-contained database backup (`.vibeacross-backup`) and restore from it. A protective backup is kept automatically before a restore.
+- **Themes & languages** — Light / Dark / Follow system, and a Simplified Chinese (zh-CN) / English (en-US) interface.
+
+## Supported AI tools
+
+VibeAcross ships with built-in definitions for six tools. Detection and configuration work for all of them; **native session operations depend on each tool providing a real, verified mechanism**, so they differ per tool.
+
+| Tool | Type | Launch project | Create session | List sessions | Resume session | Rename session |
+| --- | --- | --- | --- | --- | --- | --- |
+| **OpenCode** | CLI | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Claude Code** | CLI | ✅ | ✅ | ❌ | ✅ | ❌ |
+| **OpenAI Codex CLI** | CLI | ✅ | ⚠️ not verified | ⚠️ not verified | ⚠️ not verified | ⚠️ not verified |
+| **Cursor** | Desktop | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **Trae** | Desktop | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **WorkBuddy** | Desktop | ✅ * | ❌ | ❌ | ❌ | ❌ |
+
+Legend: ✅ supported and verified on Windows · ❌ not supported by the tool · ⚠️ supported by the tool's official CLI but **not verified here**.
+
+Notes:
+
+- **Launch project** means opening the project directory with the tool: CLI tools start with the project as the working directory; Cursor and Trae open the folder directly. For **WorkBuddy** `*`, the app starts with the project as the working directory only — the official app exposes no public "open this folder" argument, so you select the working directory inside WorkBuddy yourself.
+- **OpenCode** native sessions are end-to-end verified: create / list / resume / rename.
+- **Claude Code** supports `claude --session-id <uuid>` to create and `claude --resume <id>` to resume (verified). It provides no machine-readable history listing and no rename for existing sessions.
+- **Cursor / Trae / WorkBuddy** are desktop applications without a public CLI session interface, so native session actions are not offered.
+- Only **session metadata** (IDs, titles, directories, timestamps) is read. VibeAcross never reads or stores conversation content, and never reads or modifies any tool's private database.
+- A custom tool can be added through the Tools page; its native session support is marked "not verified" unless a mechanism is confirmed.
+
+## System requirements
+
+**To run a built app:**
+
+- Windows 10 or Windows 11 (x64).
+- Microsoft Edge WebView2 Runtime — preinstalled on Windows 11, and on most updated Windows 10 systems (otherwise install it from Microsoft).
+
+**To build from source, you additionally need:**
+
+- Node.js 20 or newer (22+ recommended) and npm.
+- Rust (stable, minimum 1.77.2) with the default `x86_64-pc-windows-msvc` toolchain.
+- Microsoft C++ Build Tools with the "Desktop development with C++" workload (the linker for Rust on Windows).
+
+VibeAcross is currently **Windows-only**. Tool detection uses the Windows registry and Windows shortcut handling.
+
+## Installation
+
+There are no published binaries yet, so build from source.
 
 ```bash
-# 安装前端依赖
+# 1. Clone the repository
+git clone https://github.com/zgit-t/VibeAcross.git
+cd VibeAcross
+
+# 2. Install frontend dependencies
 npm install
 
-# 仅前端浏览器预览（无桌面后端）
-npm run dev
-
-# 启动 Tauri 桌面开发环境（需 Rust）
-npm run tauri:dev
-```
-
-## 常用命令
-
-| 命令 | 说明 |
-| --- | --- |
-| `npm run dev` | 启动 Vite 开发服务器（浏览器模式） |
-| `npm run typecheck` | TypeScript 严格类型检查 |
-| `npm run test` | 运行前端单元测试（Vitest + Testing Library） |
-| `npm run build` | 类型检查并执行前端生产构建 |
-| `npm run preview` | 预览前端生产构建 |
-| `npm run tauri:dev` | 启动 Tauri 桌面开发窗口 |
-| `npm run tauri:build` | 构建 Tauri 桌面安装包（MSI + NSIS） |
-
-Rust 后端测试（需 Rust 工具链）：`cargo test`（在 `src-tauri/` 目录下执行）。
-
-## Windows 打包
-
-```bash
+# 3. Build the desktop app and installers
 npm run tauri:build
 ```
 
-产出（`src-tauri/target/release/bundle/`）：
+Build output (`src-tauri/target/release/`):
 
-| 产物 | 说明 |
+- The runnable application: `vibeacross.exe`
+- Installers under `src-tauri/target/release/bundle/`:
+  - `msi/VibeAcross_0.2.0_x64_zh-CN.msi`
+  - `nsis/VibeAcross_0.2.0_x64-setup.exe`
+
+The installer contains only what is needed to run the app; it does not include source code, development databases, or temporary files. Installing or uninstalling does not touch your data in `%APPDATA%\com.vibeacross.app`.
+
+For a development run instead of a packaged build, see [Development](#development).
+
+## First launch
+
+1. Start VibeAcross. On first run it creates a local SQLite database automatically (see [Where is my data?](#where-is-my-data)).
+2. Open **Tools** to see which of the six built-in tools were detected on this machine. If a tool is missing or detected unreliably, click **Add tool** and provide either its executable path or its command name.
+3. Optionally open **Settings** to choose your interface language, theme, default project folder, and default development tool.
+
+No AI tool needs an account or API key configured inside VibeAcross — the app only launches tools that you have already installed and signed in to.
+
+## Usage
+
+### Create a project
+
+1. Go to **Projects** → **Add project**.
+2. Select a local folder, optionally set a name, notes, and a default tool, then save.
+3. Open a project's detail view to see its path, health status, tasks, and native sessions.
+
+### Check and repair a project
+
+- Use **Recheck** in the **Project health** section to verify the folder and the default tool.
+- If the folder moved, use **Relocate** to point the project at the new location. VibeAcross only updates its record; it never moves, copies, or deletes your source files.
+
+### Launch a tool
+
+- From a project's detail view, choose a tool and click **Launch**. CLI tools open in the project directory; desktop tools open as usual.
+- A tool can only be launched when it is detected/configured and its project folder is valid.
+
+### Create and resume native sessions
+
+1. In a project's detail view, open the **Run session** section.
+2. Pick a tool. The session list reloads for that tool, and the tool's **native session capabilities** (Create / List / Restore / Rename) are shown as Supported, Unsupported, or Not verified.
+3. **Create & open** starts a new native session (only when Create is supported).
+4. **Continue session** resumes a listed session in its native form.
+5. **Rename** changes the display name stored in VibeAcross. Optionally also rename the title inside the tool when that is supported. Renaming never changes the native session ID.
+6. **Delete local record** removes only VibeAcross's record; it does not delete the native conversation.
+
+### Tasks
+
+Go to **Tasks** to create and edit tasks (title, description, status, priority, due date). Tasks are always attached to a project.
+
+### Work contexts (Sessions page)
+
+The **Sessions** page lists saved **work contexts** (project + tool + task). You can restore one to reopen the project directory with the selected tool. To show the most recent context on the Overview page at startup, enable **Show the last work context on startup** in Settings; automatic restore on startup is a separate opt-in and is off by default.
+
+### Search
+
+Press `Ctrl/Cmd + K` (or use the sidebar search) to open global search across projects, tasks, and work contexts. Results are grouped and support keyboard navigation.
+
+## Configuration
+
+Open **Settings** to change:
+
+- **Interface language** — Simplified Chinese (zh-CN) or English (en-US).
+- **Theme** — Light / Dark / System.
+- **Default project folder** — the starting location when creating projects.
+- **Default development tool** — the preferred tool when opening a project.
+- **Recovery** — show the last work context on startup, and optionally auto-restore it on startup.
+- **Data backup & restore** — create and restore database backups.
+- **Data directory** — view where the database is stored.
+
+## Frequently asked questions
+
+### Where is my data?
+
+In a local SQLite database at `%APPDATA%\com.vibeacross.app\vibeacross.db`. The schema is managed by migrations under `src-tauri/migrations/` and tracked in `PRAGMA user_version`. To reset, close the app and delete the `vibeacross.db*` files in that folder.
+
+### Does VibeAcross send any data anywhere?
+
+No. There is no remote server, account, cloud sync, telemetry, or LLM API. Tool detection is entirely local and never uploads paths or environment variables.
+
+### Do I need the AI tools installed?
+
+For launching and native sessions, yes — VibeAcross detects and launches tools you have already installed. You can also register a custom tool manually by path or command name.
+
+### Why does a tool show "Not verified"?
+
+Because its official mechanism could not be confirmed on this machine. VibeAcross deliberately does not offer unverified actions rather than guessing flags.
+
+### Can VibeAcross switch tools for me automatically?
+
+No. It never silently switches tools or creates sessions. You always choose the tool.
+
+### Does the backup include my source code?
+
+No. A backup contains only the application database (projects, tasks, tool configs, work contexts, settings) — never source files, tokens, or passwords.
+
+### Why don't I see a feature I read about?
+
+Anything not listed in [Core features](#core-features) and [Supported AI tools](#supported-ai-tools) is not implemented. The app does not ship placeholder or demo data.
+
+## Known limitations
+
+- **Windows only** (Windows 10/11, x64).
+- **No prebuilt releases yet** — you must build from source.
+- **Per-tool session support varies.** Only OpenCode has full native session support; Claude Code supports create/resume but not history listing or rename; Codex CLI is supported by its official CLI but has not been verified here; desktop tools (Cursor, Trae, WorkBuddy) expose no CLI session interface.
+- **WorkBuddy** launches with the project as the working directory only — no public "open this folder" argument exists, so folder selection happens inside the app, and work-context auto-open is not available for it.
+- Only **session metadata** is handled; conversation content is never read or stored, and no tool's private database is read or modified.
+- **No cloud sync or automatic scheduled backups.** Backup/restore is manual and single-file; after a restore, the interface reloads automatically.
+- **No packaged-app click-through testing** has been performed; coverage is via type checking, production builds, unit/component tests, and backend integration tests.
+
+## Development
+
+### Prerequisites
+
+See [System requirements](#system-requirements). Install Node.js 20+, Rust (stable, ≥ 1.77.2), and the Microsoft C++ Build Tools. Verify with:
+
+```powershell
+node --version
+rustc --version
+cargo --version
+```
+
+### Install and run
+
+```bash
+npm install
+
+# Browser-only preview of the frontend (no Rust backend)
+npm run dev
+
+# Full desktop dev window (requires Rust)
+npm run tauri:dev
+```
+
+`tauri:dev` runs `npm run dev` (Vite on port 1420) first, then loads it in the desktop window.
+
+### Commands
+
+| Command | Description |
 | --- | --- |
-| `msi/VibeAcross_0.2.0_x64_zh-CN.msi` | Windows Installer 安装包（适合普通用户安装） |
-| `nsis/VibeAcross_0.2.0_x64-setup.exe` | NSIS 安装程序 |
+| `npm run dev` | Start the Vite dev server (browser mode) |
+| `npm run build` | Type-check and build the frontend for production |
+| `npm run preview` | Preview the production frontend build |
+| `npm run typecheck` | TypeScript strict type check |
+| `npm run test` | Frontend unit tests (Vitest + Testing Library) |
+| `npm run test:watch` | Frontend tests in watch mode |
+| `npm run tauri:dev` | Start the Tauri desktop dev window |
+| `npm run tauri:build` | Build the Tauri desktop app and installers |
 
-安装包只包含运行所需的前端资源与后端程序，不包含源代码、开发数据库或临时文件。安装与卸载均不影响 `%APPDATA%\com.vibeacross.app` 中的用户数据。
+Backend (run from `src-tauri/`):
 
-## 本地数据
+```bash
+cargo check      # Compile check
+cargo test       # Integration tests (migrations, projects, tools, sessions, etc.)
+cargo clippy     # Lints
+```
 
-- SQLite 数据库位于系统应用数据目录：Windows 为 `%APPDATA%\com.vibeacross.app\vibeacross.db`。
-- 数据库结构由 `src-tauri/migrations/` 中的迁移脚本管理，版本记录在 `PRAGMA user_version`，可安全重复执行。
-- 项目、设置、工具安装配置、任务与工作上下文均保存在该文件中；移除项目或工具配置只删除记录，不会删除磁盘目录或卸载软件。
-- 任务始终关联一个有效项目；移除项目时会一并删除其任务（避免孤立任务）。
-- 工具检测全部在本机完成，不上传路径或环境变量，不下载或安装任何软件。
-- 工具启动只接受「项目 id + 工具安装 id」；使用明确的可执行文件路径与参数，**不拼接 shell、不做文本插值**。`.exe` 直接创建进程；npm 安装的 `.cmd` / `.bat` 仅经**受控** Windows 命令解释器（`/d /v:off /s /c` + 对结构化路径与参数的安全引用）启动，含无法安全转义字符的路径会被拒绝并提示。
-- 工作上下文（Phase 7）保存「项目 + 工具 + 任务」组合，只实现 Level 1（恢复项目、工作目录与所选工具）；不保存会话标识或对话内容。删除项目会一并删除其上下文，删除任务或工具只把对应引用置空。
-- 「启动时显示最近的工作上下文」**默认开启**，仅控制概览页「恢复工作环境」区块是否显示；自动恢复**默认关闭**，仅在用户于 Settings 显式开启后于启动时执行一次。恢复失败会记录脱敏原因并退回正常界面，不会删除任何用户数据。
-- 设置页「数据备份与恢复」可创建数据库一致性备份（单文件 `.vibeacross-backup`）并从备份恢复；备份**只含应用数据库**，不含项目目录中的源代码，也不含任何令牌或密码（数据库本身不保存此类信息）。恢复会覆盖当前数据，恢复前自动保留一份保护性备份（`vibeacross.pre-restore-*.db`），失败时自动回滚；恢复成功后界面会自动重新加载。
-- 项目详情提供「项目健康」区块：**目录有效性**与**默认工具启动能力分开呈现**，可「重新检查」；支持在系统文件管理器中打开目录、复制路径，以及失效路径的重新定位（应用前确认，**不移动 / 复制 / 删除任何源代码**）。健康检查为按需只读操作，不做后台轮询。
-- 全局搜索（阶段 05）：侧边栏入口或 `Ctrl/Cmd + K` 打开统一只读搜索，检索项目名称 / 备注、任务标题 / 描述、工作上下文名称与关联名称；**不读取或索引项目源代码**，不做全盘扫描。结果按项目 / 任务 / 工作上下文分组并支持键盘导航，可从搜索结果或列表跳转到对应项目 / 任务 / 上下文；任务编辑弹窗显示所属项目路径与默认工具状态。
+### Project layout
 
-详细的环境配置、目录结构与开发规范见 [`docs/`](./docs)。
+- `src/` — React + TypeScript frontend (`pages/`, `components/`, `features/`, `services/`, `types/`, `i18n/`).
+- `src-tauri/` — Rust backend and Tauri configuration (`src/`, `migrations/`, `tauri.conf.json`).
+- `public/`, `index.html` — Vite entry assets.
 
-## 已知限制
+### Coding conventions (summary)
 
-- 会话恢复（Level 2 / Level 3）不提供操作；Claude Code、Codex CLI、OpenCode 的官方恢复机制仅标注为「尚未验证」，本机未安装、未验证。
-- WorkBuddy 安装位置不可预测，且无公开启动参数，不支持受控启动；Claude Code / Codex CLI / OpenCode 因本机未安装，其真机启动未验证（`.cmd` 启动路径由测试覆盖）。Trae / Cursor 的受控启动已在本机验证。
-- 未在打包后的桌面应用中做端到端点击验证；前端以类型检查、生产构建、单元测试与无头浏览器渲染冒烟覆盖，后端以集成测试覆盖。
-- 一个项目只有一个默认开发工具；不检测工具是否已在运行（重复启动防抖仅覆盖短时间窗口）。
-- 备份 / 恢复为手动、单文件操作：不提供云同步或自动定时备份；恢复成功后需重新加载界面（应用会自动执行）。
+- TypeScript strict mode; do not disable type checking to silence errors.
+- Business data is read and written only through the Rust backend via `src/services/`; the frontend never touches SQLite directly.
+- Styles use CSS design tokens (`src/styles/tokens.css`) and CSS Modules; no extra styling framework.
+- Tool launching goes through the controlled Rust backend with structured arguments — never a shell string.
+- Add a new migration file instead of editing an existing one.
 
-发布说明见 [`docs/RELEASE_NOTES.md`](./docs/RELEASE_NOTES.md)，当前进度与验证结果见 [`docs/PROJECT_STATUS.md`](./docs/PROJECT_STATUS.md)。
+### Local data during development
+
+The runtime database is created automatically at `%APPDATA%\com.vibeacross.app\vibeacross.db`. SQLite databases and runtime data are gitignored and must never be committed.
+
+## Contributing
+
+Contributions are welcome.
+
+1. Fork the repository and create a feature branch.
+2. Follow the conventions above and keep changes focused and reviewable.
+3. Run the checks before opening a pull request:
+
+   ```bash
+   npm run typecheck
+   npm run test
+   npm run build
+
+   cd src-tauri
+   cargo test
+   cargo clippy
+   ```
+
+4. Do not commit user data, machine-specific paths, personal configuration, databases, or secrets.
+5. Describe in your pull request what you changed and how you verified it.
+
+If you add support for a tool or a launch/restore method, declare it explicitly in `src-tauri/src/tools/catalog.rs` and add tests. Present unverified capabilities honestly rather than as working.
+
+Issues and pull requests: <https://github.com/zgit-t/VibeAcross>
+
+## License
+
+No open-source license has been declared for this project yet. Until a license is added, the default copyright applies and no permission is granted to use, modify, or distribute the code. If you plan to reuse it, please open an issue to ask the maintainers to choose a license.

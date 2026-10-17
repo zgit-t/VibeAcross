@@ -123,12 +123,6 @@
   color: var(--color-text-muted);
 }
 
-.hint {
-  margin: 0;
-  font-size: var(--font-size-xs);
-  color: var(--color-warning);
-}
-
 .controls {
   display: flex;
   align-items: center;
@@ -137,13 +131,14 @@
 
 .toolSelect {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .toolSelectLabel {
   font-size: var(--font-size-xs);
   color: var(--color-text-muted);
+  white-space: nowrap;
 }
 
 .toolSelect select {
@@ -152,7 +147,9 @@
   background: var(--color-content-bg);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
+  font-family: inherit;
   font-size: var(--font-size-sm);
+  font-weight: 400;
 }
 
 .toolSelect select:focus-visible {
@@ -194,6 +191,8 @@
   .controls {
     grid-area: controls;
     justify-content: flex-start;
+    flex-wrap: wrap;
+    row-gap: var(--space-2);
   }
 
   .actions {

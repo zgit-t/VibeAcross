@@ -69,7 +69,8 @@ export interface LaunchResult {
   arguments: string[];
   /**
    * 本次启动是否同时在目标工具中创建 / 恢复了任务或会话上下文。
-   * 当前版本恒为 false：只创建进程并定位工作目录，不传递任何会话参数。
+   * 仅当本次启动附加了受控的会话参数（如恢复某个原生会话）时为 true；
+   * 普通「打开项目」启动不注入任何会话参数，为 false。
    */
   contextInitialized: boolean;
 }
@@ -310,6 +311,178 @@ export interface WorkspaceSessionInput {
 export interface RestoreOutcome {
   session: WorkspaceSession;
   launch: LaunchResult;
+}
+
+/** 某项原生会话能力的支持程度。与 Rust 后端 `native::Support` 一致。 */
+export type NativeSupport = "supported" | "unsupported" | "notVerified";
+
+/** 历史会话的数据来源类型。与 Rust 后端 `native::history::HistorySourceKind` 一致。 */
+export type HistorySourceKind =
+  | "service"
+  | "transcriptFile"
+  | "sessionDatabase"
+  | "memorySummary"
+  | "none";
+
+/** 记录相对「完整原生会话」的完整度。 */
+export type HistoryCompleteness =
+  | "fullNative"
+  | "metadataOnly"
+  | "summaryOnly"
+  | "none";
+
+/**
+ * 一次历史查询的数据源状态。与 Rust 后端 `native::history::HistoryQueryState` 一致。
+ * 刻意区分「有历史 / 没有历史 / 来源不存在 / 无法读取 / 结构不受支持」。
+ */
+export type HistoryQueryState =
+  | "available"
+  | "sourceMissing"
+  | "unreadable"
+  | "structureUnsupported";
+
+/** 历史会话来源的结构化说明（面向用户如实交代来源与限制）。 */
+export interface HistorySource {
+  kind: HistorySourceKind;
+  completeness: HistoryCompleteness;
+  /** 是否能取得稳定的原生会话标识。 */
+  stableNativeId: boolean;
+  /** 我们是否读取完整消息记录（本应用一律不读取对话正文）。 */
+  readsMessages: boolean;
+  /** 是否支持恢复到工具中的指定会话。 */
+  canRestore: boolean;
+  /** 来源的一句话说明。 */
+  summary: string;
+  /** 已知限制。 */
+  limitations: string;
+}
+
+/**
+ * 一款工具的原生会话能力矩阵。与 Rust 后端 `native::SessionCapabilities` 一致。
+ * 未核实（`notVerified`）的能力绝不能被当作支持。
+ */
+export interface NativeSessionCapabilities {
+  toolId: string;
+  create: NativeSupport;
+  list: NativeSupport;
+  restore: NativeSupport;
+  /** 工具是否公开提供可用于定位会话的原生标识。 */
+  nativeId: NativeSupport;
+  renameTitle: NativeSupport;
+  /** 是否可删除指定的原生会话（不是清空整个会话存储）。 */
+  delete: NativeSupport;
+  /** 历史会话的数据来源与限制（结构化）。 */
+  history: HistorySource;
+  /** 能力的核实依据与已知限制。 */
+  notes: string;
+}
+
+/**
+ * 原生会话同步结果：数据源状态 + 同步后的本地会话列表。
+ * 与 Rust 后端 `native::SyncOutcome` 一致。
+ */
+export interface NativeSyncOutcome {
+  state: HistoryQueryState;
+  sessions: AiSession[];
+}
+
+/** 工具中的一条原生会话的公开信息（不含任何对话内容）。 */
+export interface NativeSessionInfo {
+  nativeId: string;
+  title: string | null;
+  directory: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+/**
+ * 一条「项目 × 工具」关联记录。与 Rust 后端 `project_tools::ProjectTool` 一致。
+ * 它是会话的归属容器：同一项目下不同工具的会话相互独立。
+ */
+export interface ProjectTool {
+  id: string;
+  projectId: string;
+  toolId: string;
+  createdAt: string;
+  updatedAt: string;
+  /** 查询时即时计算：该关联下的会话数量（含已归档）。 */
+  sessionCount: number;
+}
+
+/** 会话状态。与 Rust 后端 `sessions::SessionStatus` 一致。 */
+export type AiSessionStatus = "active" | "archived";
+
+/** AI 工具会话记录。与 Rust 后端 `sessions::Session` 一致。 */
+export interface AiSession {
+  id: string;
+  projectToolId: string;
+  /** 由所属关联派生，便于按项目 / 工具过滤与展示。 */
+  projectId: string;
+  /** 工具安装 id（`tool_installations.id`）。 */
+  toolId: string;
+  projectName: string | null;
+  toolName: string | null;
+  /** 显示名称；由 VibeAcross 管理，允许重复。 */
+  displayName: string;
+  /** 工具公开提供的原生会话标识；工具未提供时为 null。 */
+  nativeSessionId: string | null;
+  workingDirectory: string | null;
+  status: AiSessionStatus;
+  createdAt: string;
+  updatedAt: string;
+  lastUsedAt: string | null;
+  /** 查询时即时计算：所属项目目录当前是否存在且为目录。 */
+  projectPathExists: boolean;
+}
+
+/** 创建原生会话的输入。 */
+export interface NativeCreateInput {
+  projectId: string;
+  /** 工具安装 id（`tool_installations.id`）。 */
+  toolId: string;
+  /** 显示名称 / 原生标题；为空时由工具自动生成。 */
+  displayName?: string | null;
+  /** 创建成功后是否立即在工具中打开（默认 true）。 */
+  launch?: boolean;
+}
+
+/**
+ * 创建原生会话的结果。会话记录已保存，但启动可能单独失败（如实报告）。
+ * 与 Rust 后端 `native::NativeCreateOutcome` 一致。
+ */
+export interface NativeCreateOutcome {
+  session: AiSession;
+  native: NativeSessionInfo;
+  launch: LaunchResult | null;
+  /** 启动失败时的后端错误；成功或未请求启动时为 null。 */
+  launchError: { code: string; message: string } | null;
+}
+
+/** 重命名结果：是否同时修改了原生标题。 */
+export interface AiRenameOutcome {
+  session: AiSession;
+  /** 是否真的同步修改了工具中的原生标题。 */
+  nativeRenamed: boolean;
+}
+
+/**
+ * 会话删除范围：仅删除本地记录 / 仅删除原生会话 / 两者都删。
+ * 与 Rust 后端 `native::DeleteScope` 一致。
+ */
+export type DeleteScope = "local" | "native" | "both";
+
+/**
+ * 删除会话的结果。与 Rust 后端 `native::DeleteOutcome` 一致。
+ * 如实反映本次实际删除的范围，不虚报成功。
+ */
+export interface SessionDeleteOutcome {
+  scope: DeleteScope;
+  /** 原生会话是否已删除（仅当范围包含原生删除时可能为真）。 */
+  nativeDeleted: boolean;
+  /** 删除前工具中就已不存在该原生会话（此前已在外部被删除）。 */
+  nativeAlreadyGone: boolean;
+  /** VibeAcross 本地记录是否已清理。 */
+  localDeleted: boolean;
 }
 
 /** 备份中记录的数据规模。与 Rust 后端 `backup::BackupCounts` 一致。 */

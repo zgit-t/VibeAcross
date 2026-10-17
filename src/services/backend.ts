@@ -23,6 +23,11 @@ export function getAppInfo(): Promise<AppInfo> {
   return invoke<AppInfo>("app_info");
 }
 
+/** 使用系统默认程序打开一个 http/https 链接（后端会校验协议）。 */
+export function openExternalUrl(url: string): Promise<void> {
+  return invoke<void>("open_external_url", { url });
+}
+
 /** 后端命令返回的结构化错误。 */
 export interface BackendError {
   code: string;

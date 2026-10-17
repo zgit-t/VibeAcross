@@ -21,6 +21,8 @@ struct FakeDetector {
     denied: Mutex<HashSet<String>>,
     registry: Mutex<Vec<RegistryInstall>>,
     app_paths: Mutex<HashMap<String, String>>,
+    /// `.lnk` 路径 → 目标可执行文件路径。
+    shortcuts: Mutex<Vec<(String, String)>>,
     /// 允许回退到真实文件系统（用于「含空格 / 非 ASCII 路径」测试）。
     real_fs: bool,
 }
@@ -63,6 +65,19 @@ impl FakeDetector {
             .get_mut()
             .unwrap()
             .insert(exe_name.to_string(), path.to_string());
+        self
+    }
+
+    fn with_shortcut(mut self, lnk: &str, target: &str) -> Self {
+        self.shortcuts
+            .get_mut()
+            .unwrap()
+            .push((lnk.to_string(), target.to_string()));
+        self
+    }
+
+    fn with_registry(mut self, install: RegistryInstall) -> Self {
+        self.registry.get_mut().unwrap().push(install);
         self
     }
 
@@ -117,6 +132,25 @@ impl Detector for FakeDetector {
             .unwrap()
             .get(exe_name)
             .map(PathBuf::from)
+    }
+
+    fn shortcut_files(&self) -> Vec<PathBuf> {
+        self.shortcuts
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(lnk, _)| PathBuf::from(lnk))
+            .collect()
+    }
+
+    fn shortcut_target(&self, lnk: &Path) -> Option<PathBuf> {
+        let key = normalize(&lnk.to_string_lossy());
+        self.shortcuts
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(candidate, _)| normalize(candidate) == key)
+            .map(|(_, target)| PathBuf::from(target))
     }
 
     fn query_version(&self, executable: &Path, _args: &[&str]) -> VersionOutcome {
@@ -182,6 +216,62 @@ fn reliable_unconfigured_tool_is_not_installed_after_full_detection() {
     let state = service::detect_tools(&conn, &detector, None).unwrap();
     assert_eq!(find(&state, "trae").status, ToolStatus::NotInstalled);
     assert_eq!(find(&state, "cursor").status, ToolStatus::NotInstalled);
+}
+
+#[test]
+fn trae_and_trae_solo_are_detected_independently() {
+    let db = memory_db();
+    let conn = db.conn().unwrap();
+    let solo_exe = r"D:\TRAE SOLO CN\TRAE SOLO CN.exe";
+    let detector = FakeDetector::new()
+        .with_file(solo_exe)
+        .with_app_path("TRAE SOLO CN.exe", solo_exe);
+
+    let state = service::detect_tools(&conn, &detector, None).unwrap();
+    let solo = find(&state, "trae-solo");
+    assert_eq!(solo.name, "TRAE SOLO");
+    assert_eq!(solo.status, ToolStatus::Detected);
+    assert_eq!(solo.executable_path.as_deref(), Some(solo_exe));
+
+    // TRAE SOLO 不得被 Trae 识别为自己的安装。
+    let trae = find(&state, "trae");
+    assert_ne!(trae.status, ToolStatus::Detected);
+    assert_ne!(trae.executable_path.as_deref(), Some(solo_exe));
+
+    // 两者的 App Paths 可执行文件名必须完全不相交。
+    let trae_paths: HashSet<_> = vibeacross_lib::tools::catalog::find("trae")
+        .unwrap()
+        .app_paths
+        .iter()
+        .map(|name| name.to_ascii_lowercase())
+        .collect();
+    let solo_paths: HashSet<_> = vibeacross_lib::tools::catalog::find("trae-solo")
+        .unwrap()
+        .app_paths
+        .iter()
+        .map(|name| name.to_ascii_lowercase())
+        .collect();
+    assert!(trae_paths.is_disjoint(&solo_paths));
+}
+
+#[test]
+fn trae_registry_ignores_trae_solo_uninstall_entry() {
+    let db = memory_db();
+    let conn = db.conn().unwrap();
+    let solo_exe = r"D:\TRAE SOLO CN\TRAE SOLO CN.exe";
+    let detector = FakeDetector::new()
+        .with_file(solo_exe)
+        .with_registry(RegistryInstall {
+            display_name: "TRAE SOLO CN".to_string(),
+            install_location: None,
+            display_icon: Some(solo_exe.to_string()),
+        });
+
+    let state = service::detect_tools(&conn, &detector, None).unwrap();
+    // 该卸载项属于 TRAE SOLO，Trae 必须忽略它，绝不把 SOLO 当作 Trae。
+    let trae = find(&state, "trae");
+    assert_ne!(trae.status, ToolStatus::Detected);
+    assert_ne!(trae.executable_path.as_deref(), Some(solo_exe));
 }
 
 #[test]
@@ -623,6 +713,58 @@ fn workbuddy_is_detected_via_app_paths_without_claiming_not_installed() {
 }
 
 #[test]
+fn shortcut_locates_desktop_tool_installed_in_custom_directory() {
+    // 安装到自选的 `D:\` 目录，且无 App Paths / 卸载登记，仅桌面快捷方式可定位。
+    let db = memory_db();
+    let conn = db.conn().unwrap();
+    let exe = r"D:\Trae CN\Trae CN.exe";
+    let detector = FakeDetector::new()
+        .with_shortcut(r"C:\Users\me\Desktop\Trae CN.lnk", exe)
+        .with_file(exe);
+
+    let state = service::detect_tools(&conn, &detector, Some("trae")).unwrap();
+    let trae = find(&state, "trae");
+
+    assert_eq!(trae.status, ToolStatus::Detected);
+    assert_eq!(trae.executable_path.as_deref(), Some(exe));
+    assert!(
+        trae.detection_method.as_deref().unwrap().contains("快捷方式"),
+        "检测方式应记录来源：{:?}",
+        trae.detection_method
+    );
+}
+
+#[test]
+fn workbuddy_shortcut_locates_custom_install() {
+    let db = memory_db();
+    let conn = db.conn().unwrap();
+    let exe = r"D:\WorkBuddy\WorkBuddy.exe";
+    let detector = FakeDetector::new()
+        .with_shortcut(r"C:\Users\me\Desktop\WorkBuddy.lnk", exe)
+        .with_file(exe);
+
+    let state = service::detect_tools(&conn, &detector, Some("workbuddy")).unwrap();
+    let workbuddy = find(&state, "workbuddy");
+
+    assert_eq!(workbuddy.status, ToolStatus::Detected);
+    assert_eq!(workbuddy.executable_path.as_deref(), Some(exe));
+}
+
+#[test]
+fn shortcut_with_unrelated_target_is_ignored() {
+    // 快捷方式目标文件名与工具的 app_paths 不符时不得据此识别。
+    let db = memory_db();
+    let conn = db.conn().unwrap();
+    let target = r"D:\Other\OtherApp.exe";
+    let detector = FakeDetector::new()
+        .with_shortcut(r"C:\Users\me\Desktop\Trae.lnk", target)
+        .with_file(target);
+
+    let state = service::detect_tools(&conn, &detector, Some("trae")).unwrap();
+    assert_eq!(find(&state, "trae").status, ToolStatus::NotDetected);
+}
+
+#[test]
 fn auto_detected_app_paths_are_stored_as_auto_source() {
     let db = memory_db();
     let conn = db.conn().unwrap();
@@ -639,7 +781,7 @@ fn auto_detected_app_paths_are_stored_as_auto_source() {
 
 #[test]
 fn desktop_catalog_covers_arch_virtualized_paths_and_app_paths() {
-    for tool_id in ["trae", "workbuddy", "cursor"] {
+    for tool_id in ["trae", "trae-solo", "workbuddy", "cursor"] {
         let definition = vibeacross_lib::tools::catalog::find(tool_id).unwrap();
         assert!(
             !definition.app_paths.is_empty(),

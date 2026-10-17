@@ -8,7 +8,6 @@ import type { zhCN } from "./zh-CN";
  */
 export const enUS: Record<keyof typeof zhCN, string> = {
   // App info
-  "app.tagline": "A local desktop workspace manager for Vibe Coding developers",
   "app.description":
     "VibeAcross brings your local projects, AI coding tools and development tasks together, all stored on your own machine.",
 
@@ -75,14 +74,26 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   // About dialog
   "about.title": "About {name}",
   "about.version": "Version {version}",
-  "about.runtime": "Runtime",
-  "about.desktopRuntime": "Tauri desktop window",
-  "about.browserPreview": "Browser preview (no backend)",
-  "about.backendVersion": "Backend version",
-  "about.notConnected": "Not connected",
-  "about.stack": "Tech stack",
-  "about.license":
-    "Open source license information will be provided with the dependency list in a later phase; none is declared yet.",
+  "about.tagline": "AI coding tools & project session manager",
+  "about.featuresTitle": "Key features",
+  "about.feature.projects.title": "Project management",
+  "about.feature.projects.desc":
+    "Keep your local projects in one place to find, open, and switch between them easily.",
+  "about.feature.tools.title": "AI coding tool switching",
+  "about.feature.tools.desc":
+    "Choose a suitable AI coding tool for each project to reduce the cost of switching between tools.",
+  "about.feature.sessions.title": "Session management",
+  "about.feature.sessions.desc":
+    "Browse a project's past sessions, and create new ones or resume existing ones based on what the tool actually supports.",
+  "about.feature.linking.title": "Project–session linking",
+  "about.feature.linking.desc":
+    "Organize sessions by project and AI coding tool so it is clearer which context belongs to which work.",
+  "about.toolsTitle": "Supported AI coding tools",
+  "about.toolsEmpty":
+    "Open the desktop app to see the AI coding tools supported and detected on this machine.",
+  "about.repository": "Open source repository",
+  "about.viewSource": "View source",
+  "about.openSourceFailed": "Could not open the link. Visit it manually: {url}",
 
   // Backend greeting demo
   "greeting.title": "Backend communication demo",
@@ -164,7 +175,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   "projects.notFound": "Project not found. It may have been removed.",
   "projects.removeFailed": "Failed to remove the project.",
   "projects.favoriteFailed": "Failed to update the favorite status.",
-  "projects.setToolFailed": "Failed to set the default tool.",
+  "projects.setToolFailed": "Failed to set the current tool.",
   "projects.launchedTitle": "Launched the {tool} process",
   "projects.launchedMessage": "Working directory: {dir}",
   "projects.launchFailedTitle": "Failed to launch the tool",
@@ -174,17 +185,24 @@ export const enUS: Record<keyof typeof zhCN, string> = {
 
   // Project list
   "projectList.noTool": "No tool selected",
-  "projectList.defaultUnavailable": "(default tool unavailable)",
+  "projectList.defaultNotDetected": "(not detected yet)",
+  "projectList.defaultNotLaunchable": "(currently cannot launch)",
+  "projectList.defaultRemoved": "(tool removed)",
   "projectList.pathMissing": "Path missing",
   "projectList.launchNoDir": "Project folder unavailable; cannot launch",
   "projectList.launchPickTool": "Select an available development tool first",
+  "projectList.launchNotDetected":
+    "The current tool has not been detected yet; detect or reselect it",
+  "projectList.launchNotLaunchable":
+    "The current tool cannot be launched; check its configuration",
+  "projectList.launchToolRemoved": "The current tool was removed; select another",
   "projectList.launch": "Launch 「{name}」",
   "projectList.favorite": "Favorited",
   "projectList.viewDetailAria": "View project details: {name}",
   "projectList.lastOpened": "Last opened: {time}",
-  "projectList.selectToolAria": "Select a development tool for 「{name}」",
+  "projectList.selectToolAria": "Select the current tool for 「{name}」",
   "projectList.noLaunchableTool": "No launchable tool yet; detect or add one in Tools first",
-  "projectList.selectDefaultTool": "Select this project's default development tool",
+  "projectList.selectDefaultTool": "Select this project's current tool",
   "projectList.moreActions": "More actions: {name}",
   "projectList.viewDetail": "View details",
   "projectList.rename": "Rename",
@@ -230,14 +248,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   "projectDetail.favoriteLabel": "Favorite",
   "projectDetail.favorited": "Favorited",
   "projectDetail.addFavorite": "Add to favorites",
-  "projectDetail.toolsLabel": "Development tools",
-  "projectDetail.noTools":
-    "No available (detected) development tools yet. Detect or add one on the Tools page.",
-  "projectDetail.toolCurrentUnavailable": "{name} (currently unavailable)",
   "projectDetail.toolRemoved": "(removed tool)",
-  "projectDetail.goTools": "Configure in Tools",
-  "projectDetail.defaultToolLabel": "Default development tool",
-  "projectDetail.defaultToolHint": "Saved as this project's default tool.",
   "projectDetail.launch": "Launch tool",
   "projectDetail.infoLabel": "Info",
   "projectDetail.createdAt": "Created",
@@ -417,7 +428,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   "launchSupport.unsupported": "Launch not supported",
   "launchSupport.unavailable": "Unavailable",
   "launchMethod.folderArgument": "Open with the project folder as an argument",
-  "launchMethod.workingDirectory": "Open a command line in the project folder",
+  "launchMethod.workingDirectory": "Start with the project folder as the working directory",
   "launch.noContextNote":
     "No task or session was created in the tool; open the project or start a new conversation inside the tool.",
 
@@ -460,14 +471,6 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   "sessions.emptyTitle": "No saved work context yet",
   "sessions.emptyDescription":
     "Save a project + tool + task combination to restore your workspace in one click.",
-  "sessions.capabilityTitle": "Restore capability & limits",
-  "sessions.capabilityDescription":
-    "The restore level each tool actually supports; unverified mechanisms are never marked as available.",
-  "sessions.noToolsTitle": "No tools detected yet",
-  "sessions.noToolsDescription":
-    "Detect or manually add tools on the Tools page and their restore capability will appear here.",
-  "sessions.notice":
-    "This version implements Level 1 (restoring the project, working directory and selected tool). Session restore (Level 2/3) is only labeled when a tool provides an official public mechanism, and has not been verified locally, so no action is offered.",
 
   // Restore capability
   "restoreLevel.none": "Restore not supported",
@@ -476,8 +479,6 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   "restoreLevel.fullContext": "Full context · Level 3",
   "restoreStatus.success": "Last restore succeeded",
   "restoreStatus.failed": "Last restore failed",
-  "sessionResume.unsupported": "Session restore not supported",
-  "sessionResume.documentedUnverified": "Official mechanism · unverified",
   "session.unnamed": "Untitled work context",
   "sessionState.ready.label": "Ready",
   "sessionState.ready.detail": "The project folder and the development tool are both available.",
@@ -595,8 +596,6 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   "settings.aboutDescription": "Product or version information.",
   "settings.aboutVersion": "Version {version}",
   "settings.viewAbout": "View About",
-  "settings.footerNotice":
-    "Settings are saved to the local SQLite database; every option can be changed at any time.",
   "settings.setDefaultToolFailed": "Failed to set the default tool.",
 
   // Data backup & restore
@@ -680,4 +679,138 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   "taskDialog.noContexts": "This project has no work contexts yet.",
   "taskDialog.createContext": "Go to work contexts",
   "taskDialog.contextUnavailable": "Desktop runtime unavailable; cannot check.",
+
+  // Project × tool association & session run
+  "projectTools.sectionTitle": "AI tools & sessions",
+  "projectTools.description":
+    "Associate the development tools available to this project and choose the current tool used to run sessions.",
+  "projectTools.currentLabel": "Current tool",
+  "projectTools.currentNone": "(no current tool selected)",
+  "projectTools.currentRequired": "Select a current tool before running.",
+  "projectTools.noTools": "No AI tools are associated with this project yet.",
+  "projectTools.noInstalled":
+    "No available (detected) tools on this machine yet. Detect or add one on the Tools page first.",
+  "projectTools.goTools": "Go to Tools",
+  "projectTools.addLabel": "Add tool",
+  "projectTools.addPlaceholder": "Select a tool to associate",
+  "projectTools.add": "Add",
+  "projectTools.addNone": "No tools available to add",
+  "projectTools.sessionCount": "{count} sessions",
+  "projectTools.remove": "Remove association",
+  "projectTools.removeTitle": "Remove tool association?",
+  "projectTools.removeBody":
+    "This removes the association between 「{tool}」 and 「{project}」 and deletes {count} local session records for this tool. Conversations inside the tool are not deleted.",
+  "projectTools.loadFailed": "Failed to load associated tools.",
+  "projectTools.addFailed": "Failed to add tool association.",
+  "projectTools.removeFailed": "Failed to remove tool association.",
+  "projectTools.switchFailed": "Failed to switch the current tool.",
+  "projectTools.run": "Run",
+
+  // Native session run / chooser dialog
+  "aiSession.title": "Run session",
+  "aiSession.description": "In 「{project}」 using 「{tool}」.",
+  "aiSession.toolLabel": "Switch tool",
+  "aiSession.projectLabel": "Project",
+  "aiSession.historyStateAvailable": "History readable",
+  "aiSession.historyStateAvailableDesc":
+    "Past sessions for this tool were read successfully.",
+  "aiSession.historyStateSourceMissing": "No history source found",
+  "aiSession.historyStateSourceMissingDesc":
+    "This tool has no history source on this machine yet (for example, no session has been produced, or the directory / database has not been created). This is not an error.",
+  "aiSession.historyStateUnreadable": "History source unreadable",
+  "aiSession.historyStateUnreadableDesc":
+    "The history source was found but cannot be read right now; it may be in use, blocked by permissions, or malformed.",
+  "aiSession.historyStateStructureUnsupported":
+    "History structure not supported yet",
+  "aiSession.historyStateStructureUnsupportedDesc":
+    "This tool stores its history in a private or encrypted structure that VibeAcross cannot safely parse, so no sessions are listed.",
+  "aiSession.loading": "Loading sessions…",
+  "aiSession.emptyTitle": "No past sessions yet",
+  "aiSession.emptyDescription":
+    "Create a new session for this tool, or start a conversation directly in the tool.",
+  "aiSession.retry": "Retry",
+  "aiSession.refresh": "Refresh",
+  "aiSession.loadFailed": "Failed to load sessions.",
+  "aiSession.newSession": "New session",
+  "aiSession.nameLabel": "Session name",
+  "aiSession.namePlaceholder": "e.g. Login feature work",
+  "aiSession.nameHint": "Optional. Leave blank to let the tool name it.",
+  "aiSession.create": "Create & open",
+  "aiSession.creating": "Creating…",
+  "aiSession.createFailed": "Failed to create session.",
+  "aiSession.restore": "Continue session",
+  "aiSession.restoring": "Restoring…",
+  "aiSession.restoreFailed": "Failed to restore session.",
+  "aiSession.rename": "Rename",
+  "aiSession.renameFailed": "Failed to rename session.",
+  "aiSession.nameEmpty": "Session name cannot be empty.",
+  "aiSession.nameTooLong": "Session name must be 120 characters or fewer.",
+  "aiSession.syncNativeLabel": "Also rename the title in the tool",
+  "aiSession.syncNativeHint":
+    "Available only when the tool supports it; by default only the display name in VibeAcross changes.",
+  "aiSession.localOnlyNote":
+    "Renaming by default only changes the display name in VibeAcross; the title inside the tool is not changed.",
+  "aiSession.delete": "Delete session",
+  "aiSession.deleteTitle": "Delete session",
+  "aiSession.deleteConfirmName": "Delete the session \"{name}\"?",
+  "aiSession.deleteContext": "Project: {project}; AI tool: {tool}.",
+  "aiSession.deleteScopeLabel": "Choose deletion scope",
+  "aiSession.deleteScopeLocal": "Only the record in VibeAcross",
+  "aiSession.deleteScopeLocalDesc":
+    "Removes only VibeAcross's record for this session; the native session inside the AI tool is not deleted.",
+  "aiSession.deleteScopeNative": "Only the session in the AI tool",
+  "aiSession.deleteScopeNativeDesc":
+    "Attempts to delete the native session inside the AI tool and keeps the record in VibeAcross.",
+  "aiSession.deleteScopeNativeNote":
+    "After deletion, the local record may no longer be usable to restore the session.",
+  "aiSession.deleteScopeBoth": "Delete both",
+  "aiSession.deleteScopeBothDesc":
+    "Deletes the native session inside the AI tool and removes the matching record in VibeAcross.",
+  "aiSession.deleteScopeBothNote":
+    "This may be irreversible; proceed with care.",
+  "aiSession.deleteScopeNoNativeId":
+    "This session has no native session id, so the session inside the tool cannot be located and deleted.",
+  "aiSession.deleteScopeNativeUnsupported":
+    "{tool} does not support deleting native sessions.",
+  "aiSession.deleteFailed": "Failed to delete session.",
+  "aiSession.deletedWithNative":
+    "Deleted session \"{name}\" and its native session inside the tool.",
+  "aiSession.deletedLocalOnly":
+    "Deleted the local record for \"{name}\" (the native session inside the tool was kept).",
+  "aiSession.deletedNativeOnly":
+    "Deleted the native session inside the tool (the local record in VibeAcross was kept).",
+  "aiSession.deleteNativeAlreadyGoneOnly":
+    "The native session no longer exists in the tool; the local record in VibeAcross was kept.",
+  "aiSession.deletedBothNativeAlreadyGone":
+    "The native session did not exist in the tool; the local record in VibeAcross was cleaned up.",
+  "aiSession.lastUsed": "Last used {time}",
+  "aiSession.updatedAt": "Updated {time}",
+  "aiSession.statusActive": "Restorable",
+  "aiSession.statusArchived": "Archived",
+  "aiSession.statusMissing": "Session no longer exists",
+  "aiSession.statusProjectMissing": "Project directory missing",
+  "aiSession.statusUnsupported": "Restore not supported by this tool",
+  "aiSession.statusLocalOnly": "Local record only",
+  "aiSession.unsupportedTitle": "This tool does not support listing sessions",
+  "aiSession.unsupportedBody":
+    "{tool} cannot list sessions in VibeAcross yet; only local records already in VibeAcross are shown.",
+  "aiSession.createUnsupportedTitle": "This tool does not support creating sessions",
+  "aiSession.openTool": "Open tool",
+  "aiSession.openingTool": "Opening…",
+  "aiSession.openToolSuccess": "Opened 「{tool}」 in the project directory.",
+  "aiSession.openToolFailed": "Failed to open the tool.",
+  "aiSession.openToolHint": "Cannot open this tool here right now: {reason}",
+  "aiSession.projectDirInvalid":
+    "The project directory is unavailable, so sessions cannot run. Relocate it in the project details first.",
+  "aiSession.toolUnavailable":
+    "The selected tool is currently unavailable. Reconfigure it on the Tools page.",
+  "aiSession.notDesktop":
+    "Not running in the desktop app; session features are unavailable.",
+  "aiSession.successCreated": "Created and opened session 「{name}」.",
+  "aiSession.successCreatedNoLaunch":
+    "Created session 「{name}」 but could not open it automatically: {reason}",
+  "aiSession.successRestored": "Restored session 「{name}」.",
+  "aiSession.noToolsTitle": "No detected tool available",
+  "aiSession.noTools":
+    "No AI tool has been detected yet. Detect or configure one on the Tools page first.",
 };

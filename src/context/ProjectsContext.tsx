@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type { ReactNode } from "react";
@@ -64,6 +65,7 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(desktopAvailable);
   const [error, setError] = useState<string | null>(null);
   const [sort, setSort] = useState<ProjectSort>("recent");
+  const loadRef = useRef(0);
 
   const load = useCallback(
     async (nextSort: ProjectSort) => {
@@ -72,15 +74,26 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
         setLoading(false);
         return;
       }
+      // 带请求令牌，丢弃过期响应，避免快速切换 / 连续变更时旧结果覆盖新状态。
+      const token = loadRef.current + 1;
+      loadRef.current = token;
       setLoading(true);
       try {
         const result = await projectsService.listProjects(nextSort);
+        if (loadRef.current !== token) {
+          return;
+        }
         setProjects(result);
         setError(null);
       } catch (cause) {
+        if (loadRef.current !== token) {
+          return;
+        }
         setError(toErrorMessage(cause, t("error.readProjects")));
       } finally {
-        setLoading(false);
+        if (loadRef.current === token) {
+          setLoading(false);
+        }
       }
     },
     [desktopAvailable],

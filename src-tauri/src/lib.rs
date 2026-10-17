@@ -9,8 +9,11 @@ pub mod health;
 pub mod launch;
 pub mod migrations;
 pub mod models;
+pub mod native;
+pub mod project_tools;
 pub mod projects;
 pub mod search;
+pub mod sessions;
 pub mod settings;
 pub mod shell;
 pub mod tasks;
@@ -46,6 +49,12 @@ fn app_info() -> AppInfo {
     }
 }
 
+/// 使用系统默认程序打开一个 http/https 链接（协议由后端校验）。
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), error::AppError> {
+    shell::open_url(&url)
+}
+
 /// 初始化数据库：数据目录位于系统应用数据目录下，绝不写入源码或安装目录。
 fn init_database(app: &tauri::AppHandle) -> Result<db::Database, Box<dyn std::error::Error>> {
     let data_dir = app.path().app_data_dir()?;
@@ -69,6 +78,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             app_info,
+            open_external_url,
             commands::list_projects,
             commands::get_project,
             commands::create_project,
@@ -112,6 +122,24 @@ pub fn run() {
             commands::update_workspace_session,
             commands::delete_workspace_session,
             commands::restore_workspace_session,
+            commands::list_project_tools,
+            commands::list_projects_for_tool,
+            commands::add_project_tool,
+            commands::remove_project_tool,
+            commands::list_sessions,
+            commands::get_session,
+            commands::create_session,
+            commands::rename_session,
+            commands::set_session_status,
+            commands::touch_session,
+            commands::delete_session,
+            commands::delete_session_scoped,
+            commands::session_capabilities,
+            commands::list_native_sessions,
+            commands::sync_native_sessions,
+            commands::create_native_session,
+            commands::restore_native_session,
+            commands::rename_native_session,
         ])
         .run(tauri::generate_context!())
         .expect("启动 VibeAcross 应用时发生错误");

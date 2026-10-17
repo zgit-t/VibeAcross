@@ -48,12 +48,9 @@ describe("getToolRowActions", () => {
   );
 
   it("toggles the default action based on the current default flag", () => {
-    expect(getToolRowActions(row("auto", "detected", { isDefault: true }))).toEqual([
-      "unsetDefault",
-      "configure",
-      "redetect",
-      "remove",
-    ]);
+    expect(
+      getToolRowActions(row("auto", "detected", { isDefault: true })),
+    ).toEqual(["unsetDefault", "configure", "redetect", "remove"]);
   });
 
   it("omits the default action when the tool is not installed", () => {

@@ -5,7 +5,6 @@
  */
 export const zhCN = {
   // 应用信息
-  "app.tagline": "面向 Vibe Coding 开发者的本地桌面工作区管理工具",
   "app.description":
     "VibeAcross 统一管理本地开发项目、AI 编程工具与开发任务，所有数据均保存在本机。",
 
@@ -72,14 +71,25 @@ export const zhCN = {
   // 关于弹窗
   "about.title": "关于 {name}",
   "about.version": "版本 {version}",
-  "about.runtime": "运行环境",
-  "about.desktopRuntime": "Tauri 桌面窗口",
-  "about.browserPreview": "浏览器预览（未连接后端）",
-  "about.backendVersion": "后端版本",
-  "about.notConnected": "未连接",
-  "about.stack": "技术栈",
-  "about.license":
-    "开源许可信息将在后续阶段随依赖清单一并提供，当前不做声明。",
+  "about.tagline": "AI 编程工具与项目会话管理工具",
+  "about.featuresTitle": "核心功能",
+  "about.feature.projects.title": "项目管理",
+  "about.feature.projects.desc":
+    "集中管理本地开发项目，方便查找、打开和切换不同项目。",
+  "about.feature.tools.title": "AI 编程工具切换",
+  "about.feature.tools.desc":
+    "为项目选择合适的 AI 编程工具，减少在不同工具之间切换的操作成本。",
+  "about.feature.sessions.title": "会话管理",
+  "about.feature.sessions.desc":
+    "查看项目对应的历史会话，并根据工具实际支持的能力创建新会话或恢复已有会话。",
+  "about.feature.linking.title": "项目与会话关联",
+  "about.feature.linking.desc":
+    "按照项目和 AI 编程工具组织会话，帮助更清晰地管理不同开发工作中的上下文。",
+  "about.toolsTitle": "支持的 AI 编程工具",
+  "about.toolsEmpty": "在桌面应用中即可查看本机支持与已识别的 AI 编程工具。",
+  "about.repository": "开源仓库",
+  "about.viewSource": "查看源代码",
+  "about.openSourceFailed": "无法打开链接，请手动访问：{url}",
 
   // 后端通信示例
   "greeting.title": "后端通信示例",
@@ -161,7 +171,7 @@ export const zhCN = {
   "projects.notFound": "未找到该项目，它可能已被移除。",
   "projects.removeFailed": "移除项目失败。",
   "projects.favoriteFailed": "更新收藏状态失败。",
-  "projects.setToolFailed": "设置默认工具失败。",
+  "projects.setToolFailed": "设置当前工具失败。",
   "projects.launchedTitle": "已启动 {tool} 的进程",
   "projects.launchedMessage": "工作目录：{dir}",
   "projects.launchFailedTitle": "启动工具失败",
@@ -171,17 +181,22 @@ export const zhCN = {
 
   // 项目列表
   "projectList.noTool": "未选择工具",
-  "projectList.defaultUnavailable": "（默认工具不可用）",
+  "projectList.defaultNotDetected": "（尚未检测到）",
+  "projectList.defaultNotLaunchable": "（当前无法启动）",
+  "projectList.defaultRemoved": "（工具已移除）",
   "projectList.pathMissing": "路径不存在",
   "projectList.launchNoDir": "项目目录不可用，无法启动",
   "projectList.launchPickTool": "请先选择一个可用的开发工具",
+  "projectList.launchNotDetected": "当前工具尚未检测到，请先检测或重新选择",
+  "projectList.launchNotLaunchable": "当前工具无法启动，请检查配置",
+  "projectList.launchToolRemoved": "当前工具已被移除，请重新选择",
   "projectList.launch": "启动「{name}」",
   "projectList.favorite": "已收藏",
   "projectList.viewDetailAria": "查看项目详情：{name}",
   "projectList.lastOpened": "最近访问：{time}",
-  "projectList.selectToolAria": "为「{name}」选择开发工具",
+  "projectList.selectToolAria": "为「{name}」选择当前工具",
   "projectList.noLaunchableTool": "尚无可启动的开发工具，请先在 Tools 中检测或添加",
-  "projectList.selectDefaultTool": "选择该项目的默认开发工具",
+  "projectList.selectDefaultTool": "选择该项目的当前工具",
   "projectList.moreActions": "更多操作：{name}",
   "projectList.viewDetail": "查看详情",
   "projectList.rename": "重命名",
@@ -227,14 +242,7 @@ export const zhCN = {
   "projectDetail.favoriteLabel": "收藏",
   "projectDetail.favorited": "已收藏",
   "projectDetail.addFavorite": "加入收藏",
-  "projectDetail.toolsLabel": "开发工具",
-  "projectDetail.noTools":
-    "还没有可用（已检测到）的开发工具，请先在 Tools 页面检测或添加。",
-  "projectDetail.toolCurrentUnavailable": "{name}（当前不可用）",
   "projectDetail.toolRemoved": "（已移除的工具）",
-  "projectDetail.goTools": "前往 Tools 配置",
-  "projectDetail.defaultToolLabel": "默认开发工具",
-  "projectDetail.defaultToolHint": "保存后会记录为该项目的默认工具。",
   "projectDetail.launch": "启动工具",
   "projectDetail.infoLabel": "信息",
   "projectDetail.createdAt": "创建时间",
@@ -414,7 +422,7 @@ export const zhCN = {
   "launchSupport.unsupported": "暂不支持启动",
   "launchSupport.unavailable": "不可用",
   "launchMethod.folderArgument": "以项目目录作为参数打开",
-  "launchMethod.workingDirectory": "在项目目录中打开命令行",
+  "launchMethod.workingDirectory": "以项目目录作为工作目录启动",
   "launch.noContextNote":
     "未在工具中创建任务或会话；请在工具内手动打开项目或开始新的对话。",
 
@@ -457,14 +465,6 @@ export const zhCN = {
   "sessions.emptyTitle": "还没有保存的工作上下文",
   "sessions.emptyDescription":
     "保存一个「项目 + 工具 + 任务」组合，之后即可一键恢复工作环境。",
-  "sessions.capabilityTitle": "恢复能力与限制",
-  "sessions.capabilityDescription":
-    "各开发工具实际支持的恢复层级；未经验证的机制不会被标记为可用。",
-  "sessions.noToolsTitle": "尚未检测到工具",
-  "sessions.noToolsDescription":
-    "前往 Tools 页面检测或手动添加工具后，这里会显示其恢复能力。",
-  "sessions.notice":
-    "当前版本实现 Level 1（恢复项目、工作目录与所选工具）。会话恢复（Level 2/3）仅在工具提供官方公开机制时标注，且尚未在本机验证，因此不提供对应操作。",
 
   // 恢复能力
   "restoreLevel.none": "不支持恢复",
@@ -473,8 +473,6 @@ export const zhCN = {
   "restoreLevel.fullContext": "完整上下文 · Level 3",
   "restoreStatus.success": "上次恢复成功",
   "restoreStatus.failed": "上次恢复失败",
-  "sessionResume.unsupported": "不支持会话恢复",
-  "sessionResume.documentedUnverified": "有官方机制 · 尚未验证",
   "session.unnamed": "未命名工作上下文",
   "sessionState.ready.label": "可恢复",
   "sessionState.ready.detail": "项目目录与开发工具均可用。",
@@ -592,8 +590,6 @@ export const zhCN = {
   "settings.aboutDescription": "产品或版本信息。",
   "settings.aboutVersion": "版本 {version}",
   "settings.viewAbout": "查看关于",
-  "settings.footerNotice":
-    "设置保存在本机 SQLite 数据库，所有选项均可随时更改。",
   "settings.setDefaultToolFailed": "设置默认工具失败。",
 
   // 数据备份与恢复
@@ -676,4 +672,129 @@ export const zhCN = {
   "taskDialog.noContexts": "该项目还没有工作上下文。",
   "taskDialog.createContext": "前往工作上下文",
   "taskDialog.contextUnavailable": "未运行桌面端，无法检查。",
+
+  // 项目 × 工具关联与会话运行
+  "projectTools.sectionTitle": "AI 工具与会话",
+  "projectTools.description":
+    "关联该项目可用的开发工具，并选择运行会话时使用的当前工具。",
+  "projectTools.currentLabel": "当前工具",
+  "projectTools.currentNone": "（未选择当前工具）",
+  "projectTools.currentRequired": "请先选择当前工具再运行。",
+  "projectTools.noTools": "该项目还没有关联任何 AI 工具。",
+  "projectTools.noInstalled":
+    "本机尚无可用（已检测到）的工具，请先在 Tools 页面检测或添加。",
+  "projectTools.goTools": "前往 Tools",
+  "projectTools.addLabel": "添加工具",
+  "projectTools.addPlaceholder": "选择要关联的工具",
+  "projectTools.add": "添加",
+  "projectTools.addNone": "没有可添加的工具",
+  "projectTools.sessionCount": "{count} 个会话",
+  "projectTools.remove": "移除关联",
+  "projectTools.removeTitle": "移除工具关联？",
+  "projectTools.removeBody":
+    "将移除「{tool}」与「{project}」的关联，并删除 VibeAcross 中该工具下这个项目的 {count} 条本地会话记录。不会删除工具中的对话。",
+  "projectTools.loadFailed": "读取项目关联工具失败。",
+  "projectTools.addFailed": "添加工具关联失败。",
+  "projectTools.removeFailed": "移除工具关联失败。",
+  "projectTools.switchFailed": "切换当前工具失败。",
+  "projectTools.run": "运行",
+
+  // 原生会话运行 / 选择弹窗
+  "aiSession.title": "运行会话",
+  "aiSession.description": "在「{project}」中使用「{tool}」。",
+  "aiSession.toolLabel": "切换工具",
+  "aiSession.projectLabel": "项目",
+  "aiSession.historyStateAvailable": "历史可读",
+  "aiSession.historyStateAvailableDesc": "已读取到该工具的历史会话。",
+  "aiSession.historyStateSourceMissing": "未发现历史来源",
+  "aiSession.historyStateSourceMissingDesc":
+    "该工具在本机还没有历史会话来源（例如尚未产生任何会话，或对应目录 / 数据库尚未创建）。这不是错误。",
+  "aiSession.historyStateUnreadable": "历史来源无法读取",
+  "aiSession.historyStateUnreadableDesc":
+    "已找到该工具的历史来源，但当前无法读取；可能是文件被占用、权限不足或格式异常。",
+  "aiSession.historyStateStructureUnsupported": "历史结构暂不受支持",
+  "aiSession.historyStateStructureUnsupportedDesc":
+    "该工具的历史以非公开或加密结构存储，VibeAcross 目前无法安全解析，因此不列出任何会话。",
+  "aiSession.loading": "正在读取会话…",
+  "aiSession.emptyTitle": "还没有历史会话",
+  "aiSession.emptyDescription":
+    "为该工具创建一个新会话，或直接在工具中开始对话。",
+  "aiSession.retry": "重试",
+  "aiSession.refresh": "刷新",
+  "aiSession.loadFailed": "读取会话失败。",
+  "aiSession.newSession": "新建会话",
+  "aiSession.nameLabel": "会话名称",
+  "aiSession.namePlaceholder": "例如：登录功能开发",
+  "aiSession.nameHint": "可选。留空则由工具自动命名。",
+  "aiSession.create": "创建并进入",
+  "aiSession.creating": "创建中…",
+  "aiSession.createFailed": "创建会话失败。",
+  "aiSession.restore": "继续会话",
+  "aiSession.restoring": "恢复中…",
+  "aiSession.restoreFailed": "恢复会话失败。",
+  "aiSession.rename": "重命名",
+  "aiSession.renameFailed": "重命名失败。",
+  "aiSession.nameEmpty": "会话名称不能为空。",
+  "aiSession.nameTooLong": "会话名称请控制在 120 个字符以内。",
+  "aiSession.syncNativeLabel": "同时修改工具中的标题",
+  "aiSession.syncNativeHint":
+    "仅在工具支持时可用；默认只修改 VibeAcross 中的显示名称。",
+  "aiSession.localOnlyNote":
+    "重命名默认只修改 VibeAcross 中的显示名称，不会改变工具中的标题。",
+  "aiSession.delete": "删除会话",
+  "aiSession.deleteTitle": "删除会话",
+  "aiSession.deleteConfirmName": "确定要删除会话「{name}」吗？",
+  "aiSession.deleteContext": "所属项目：{project}；AI 工具：{tool}。",
+  "aiSession.deleteScopeLabel": "选择删除范围",
+  "aiSession.deleteScopeLocal": "仅删除 VibeAcross 中的记录",
+  "aiSession.deleteScopeLocalDesc":
+    "仅删除 VibeAcross 中保存的该会话记录，不删除 AI 编程工具中的原生会话。",
+  "aiSession.deleteScopeNative": "仅删除 AI 工具中的会话",
+  "aiSession.deleteScopeNativeDesc":
+    "尝试删除 AI 编程工具中的原生会话，保留 VibeAcross 中的记录。",
+  "aiSession.deleteScopeNativeNote":
+    "删除后本地记录可能无法再用于恢复该会话。",
+  "aiSession.deleteScopeBoth": "同时删除两者",
+  "aiSession.deleteScopeBothDesc":
+    "删除 AI 编程工具中的原生会话，并删除 VibeAcross 中对应的记录。",
+  "aiSession.deleteScopeBothNote": "删除后可能无法恢复，请谨慎操作。",
+  "aiSession.deleteScopeNoNativeId":
+    "该会话没有原生会话标识，无法定位并删除工具中的会话。",
+  "aiSession.deleteScopeNativeUnsupported": "{tool} 暂不支持删除原生会话。",
+  "aiSession.deleteFailed": "删除会话失败。",
+  "aiSession.deletedWithNative": "已删除会话「{name}」及其在工具中的原生会话。",
+  "aiSession.deletedLocalOnly":
+    "已删除会话「{name}」的本地记录（工具中的原生会话已保留）。",
+  "aiSession.deletedNativeOnly":
+    "已删除工具中的原生会话（VibeAcross 中的本地记录已保留）。",
+  "aiSession.deleteNativeAlreadyGoneOnly":
+    "工具中已不存在该原生会话，VibeAcross 中的本地记录已保留。",
+  "aiSession.deletedBothNativeAlreadyGone":
+    "工具中本已不存在该原生会话，已清理 VibeAcross 中的本地记录。",
+  "aiSession.lastUsed": "最近使用 {time}",
+  "aiSession.updatedAt": "更新于 {time}",
+  "aiSession.statusActive": "可恢复",
+  "aiSession.statusArchived": "已归档",
+  "aiSession.statusMissing": "会话已不存在",
+  "aiSession.statusProjectMissing": "项目目录不存在",
+  "aiSession.statusUnsupported": "当前工具不支持恢复",
+  "aiSession.statusLocalOnly": "仅本地记录",
+  "aiSession.unsupportedTitle": "当前工具不支持历史查询",
+  "aiSession.unsupportedBody":
+    "{tool} 暂不支持在 VibeAcross 中列出历史会话；此处仅显示 VibeAcross 中已有的本地记录。",
+  "aiSession.createUnsupportedTitle": "当前工具不支持创建会话",
+  "aiSession.openTool": "打开工具",
+  "aiSession.openingTool": "正在打开…",
+  "aiSession.openToolSuccess": "已在项目目录中打开「{tool}」。",
+  "aiSession.openToolFailed": "打开工具失败。",
+  "aiSession.openToolHint": "当前无法在此打开该工具：{reason}",
+  "aiSession.projectDirInvalid":
+    "项目目录不可用，无法运行会话。请先在项目详情中重新定位。",
+  "aiSession.toolUnavailable": "所选工具当前不可用，请在 Tools 页面重新配置。",
+  "aiSession.notDesktop": "当前不在桌面应用中运行，无法使用会话功能。",
+  "aiSession.successCreated": "已创建并进入会话「{name}」。",
+  "aiSession.successCreatedNoLaunch": "已创建会话「{name}」，但未能自动打开：{reason}",
+  "aiSession.successRestored": "已恢复会话「{name}」。",
+  "aiSession.noToolsTitle": "未检测到可用工具",
+  "aiSession.noTools": "当前没有已检测到的 AI 工具，请先在 Tools 页面检测或配置。",
 } as const;

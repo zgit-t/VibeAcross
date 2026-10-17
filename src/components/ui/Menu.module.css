@@ -5,11 +5,12 @@
 /*
  * 浮层通过 Portal 挂载到 body，并使用 fixed 定位，脱离列表卡片的
  * `overflow: hidden` 与内容区滚动容器，因此不会被裁剪。
- * z-index 高于 Modal(100) 与 Drawer(1000)，确保展开时位于最上层。
+ * 层叠顺序见 tokens.css：菜单(1200) > 模态(1100) > 抽屉(1000)，
+ * 确保菜单在模态与抽屉内展开时都位于最上层。
  */
 .menu {
   position: fixed;
-  z-index: 1100;
+  z-index: var(--z-menu);
   min-width: 176px;
   max-height: calc(100vh - 16px);
   overflow-y: auto;

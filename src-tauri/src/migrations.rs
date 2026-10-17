@@ -24,6 +24,14 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0006_drop_activity",
         include_str!("../migrations/0006_drop_activity.sql"),
     ),
+    (
+        "0007_session_model",
+        include_str!("../migrations/0007_session_model.sql"),
+    ),
+    (
+        "0008_project_current_tool",
+        include_str!("../migrations/0008_project_current_tool.sql"),
+    ),
 ];
 
 /// 当前应用支持的最新数据库版本（等于已登记迁移的数量）。

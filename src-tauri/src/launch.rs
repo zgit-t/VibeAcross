@@ -9,10 +9,11 @@
 
 use crate::error::AppError;
 use crate::models::Project;
+use crate::project_tools;
 use crate::projects;
 use crate::tools::detect::Detector;
 use crate::tools::model::{
-    command_script_unsafe_char, is_command_script, LaunchMethod, LaunchSupport,
+    command_script_unsafe_char, is_command_script, LaunchMethod, LaunchSupport, ToolType,
 };
 use crate::tools::service as tools;
 use rusqlite::{params, Connection};
@@ -264,9 +265,9 @@ pub struct LaunchResult {
     pub arguments: Vec<String>,
     /// 本次启动是否同时在目标工具中创建 / 恢复了任务或会话上下文。
     ///
-    /// 当前版本不向工具传递任何会话或上下文参数，因此恒为 `false`；
-    /// 界面据此如实告知用户需在工具内手动继续，避免把「进程已创建」误当作
-    /// 「任务已初始化」。
+    /// 仅当本次启动附加了受控的会话参数（如恢复某个原生会话）时为 `true`；
+    /// 普通的「打开项目」启动不注入任何会话参数，为 `false`，界面据此如实告知
+    /// 用户需在工具内手动继续，避免把「进程已创建」误当作「任务已初始化」。
     pub context_initialized: bool,
 }
 
@@ -294,6 +295,9 @@ pub fn set_project_tool(
         if !entry.installed {
             return Err(AppError::new("TOOL_NOT_READY", entry.launch.reason.clone()));
         }
+        // 设为当前工具时自动建立项目关联，保证「当前工具」始终是有效的关联工具，
+        // 运行入口与历史会话列表都能按关联找到它。
+        project_tools::ensure(conn, project_id, id)?;
     }
 
     projects::set_default_tool(conn, project_id, target)
@@ -327,6 +331,22 @@ pub fn launch(
     guard: &LaunchGuard,
     project_id: &str,
     tool_id: Option<&str>,
+    detector: &dyn Detector,
+) -> Result<LaunchResult, AppError> {
+    launch_with_args(conn, launcher, guard, project_id, tool_id, &[], detector)
+}
+
+/// 在指定项目目录中启动工具，并附加受控的额外参数（如恢复某个原生会话）。
+///
+/// `extra_args` 只能由后端内部根据已校验的数据构造（例如 `["--session", <id>]`），
+/// 绝不允许来自前端的任意命令或参数。
+pub fn launch_with_args(
+    conn: &Connection,
+    launcher: &dyn ProcessLauncher,
+    guard: &LaunchGuard,
+    project_id: &str,
+    tool_id: Option<&str>,
+    extra_args: &[String],
     detector: &dyn Detector,
 ) -> Result<LaunchResult, AppError> {
     let project = projects::get_project(conn, project_id)?;
@@ -415,10 +435,21 @@ pub fn launch(
     }
 
     // 不同工具类型使用不同的启动方式，绝不共用一套参数。
-    let (args, mode) = match method {
+    let (mut args, mode) = match method {
         LaunchMethod::FolderArgument => (vec![project.path.clone()], LaunchMode::Detached),
-        LaunchMethod::WorkingDirectory => (Vec::new(), LaunchMode::Console),
+        // 命令行工具在新的控制台窗口启动；桌面应用则以项目目录为工作目录、无窗口启动
+        // （应用若支持，会在该目录下打开项目；若不支持则由用户在应用内选择）。
+        LaunchMethod::WorkingDirectory => (
+            Vec::new(),
+            if entry.tool_type == ToolType::Desktop {
+                LaunchMode::Detached
+            } else {
+                LaunchMode::Console
+            },
+        ),
     };
+    // 受控的额外参数（如恢复原生会话）；由后端内部构造，非用户输入。
+    args.extend(extra_args.iter().cloned());
 
     // `.cmd` / `.bat` 无法直接创建进程，必须经 Windows 命令解释器启动。
     let target = if is_command_script(&executable_path) {
@@ -440,7 +471,11 @@ pub fn launch(
         LaunchTarget::Direct
     };
 
-    let key = format!("{project_id}:{target_id}");
+    let key = if extra_args.is_empty() {
+        format!("{project_id}:{target_id}")
+    } else {
+        format!("{project_id}:{target_id}:{}", extra_args.join(" "))
+    };
     if !guard.allow(&key) {
         return Err(AppError::new(
             "LAUNCH_DUPLICATE",
@@ -478,8 +513,8 @@ pub fn launch(
         method,
         working_dir: project.path.clone(),
         arguments: args,
-        // 当前版本只创建进程并定位工作目录，不注入任何会话 / 上下文参数。
-        context_initialized: false,
+        // 附加了会话 / 上下文参数时，本次启动同时恢复了一个原生会话。
+        context_initialized: !extra_args.is_empty(),
     })
 }
 

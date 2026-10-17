@@ -123,7 +123,10 @@ export function TaskList({
               </div>
 
               <div className={styles.main}>
-                <span className={`${styles.title} ${done ? styles.titleDone : ""}`}>
+                <span
+                  className={`${styles.title} ${done ? styles.titleDone : ""}`}
+                  title={task.title}
+                >
                   {task.title}
                 </span>
                 <span className={styles.meta}>

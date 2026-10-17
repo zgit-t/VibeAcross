@@ -7,7 +7,13 @@ use crate::shell;
 use crate::models::{
     AppSettings, CreateProjectInput, ImportProjectInput, Project, StorageInfo,
 };
+use crate::native::{
+    self, DeleteOutcome, DeleteScope, NativeCreateInput, NativeCreateOutcome, NativeSessionInfo,
+    RenameOutcome, SessionCapabilities, SystemNativeBackend,
+};
+use crate::project_tools::{self, ProjectTool, ProjectToolInput};
 use crate::search::{self, SearchResults};
+use crate::sessions::{self, Session, SessionInput, SessionQuery, SessionStatus};
 use crate::tasks::{self, Task, TaskInput, TaskQuery, TaskStats, TaskStatus};
 use crate::tools::detect::SystemDetector;
 use crate::tools::model::{ToolConfigInput, ToolState};
@@ -387,4 +393,205 @@ pub fn restore_workspace_session(
         tool_id.as_deref(),
     )
     .map(|outcome| outcome.launch)
+}
+
+/// 某个项目关联的全部开发工具。
+#[tauri::command]
+pub fn list_project_tools(db: State<Database>, project_id: String) -> Result<Vec<ProjectTool>, AppError> {
+    let conn = db.conn()?;
+    project_tools::list_for_project(&conn, &project_id)
+}
+
+/// 某款工具关联的全部项目。
+#[tauri::command]
+pub fn list_projects_for_tool(db: State<Database>, tool_id: String) -> Result<Vec<ProjectTool>, AppError> {
+    let conn = db.conn()?;
+    project_tools::list_for_tool(&conn, &tool_id)
+}
+
+/// 建立（或返回已存在的）项目 × 工具关联。
+///
+/// 关联某款工具即让它成为该项目的当前工具：用户刚选中的工具就是接下来要用的工具。
+#[tauri::command]
+pub fn add_project_tool(db: State<Database>, input: ProjectToolInput) -> Result<ProjectTool, AppError> {
+    let conn = db.conn()?;
+    let association = project_tools::ensure(&conn, &input.project_id, &input.tool_id)?;
+    projects::set_default_tool(&conn, &input.project_id, Some(&input.tool_id))?;
+    Ok(association)
+}
+
+/// 删除一条项目 × 工具关联；其下的会话记录随之删除。
+#[tauri::command]
+pub fn remove_project_tool(db: State<Database>, id: String) -> Result<(), AppError> {
+    let conn = db.conn()?;
+    project_tools::remove(&conn, &id)
+}
+
+/// 查询会话列表（可按项目 / 工具 / 状态过滤）。
+#[tauri::command]
+pub fn list_sessions(db: State<Database>, query: Option<SessionQuery>) -> Result<Vec<Session>, AppError> {
+    let conn = db.conn()?;
+    sessions::list(&conn, &query.unwrap_or_default())
+}
+
+#[tauri::command]
+pub fn get_session(db: State<Database>, id: String) -> Result<Session, AppError> {
+    let conn = db.conn()?;
+    sessions::get(&conn, &id)
+}
+
+#[tauri::command]
+pub fn create_session(db: State<Database>, input: SessionInput) -> Result<Session, AppError> {
+    let conn = db.conn()?;
+    sessions::create(&conn, input)
+}
+
+#[tauri::command]
+pub fn rename_session(
+    db: State<Database>,
+    id: String,
+    display_name: String,
+) -> Result<Session, AppError> {
+    let conn = db.conn()?;
+    sessions::rename(&conn, &id, &display_name)
+}
+
+#[tauri::command]
+pub fn set_session_status(
+    db: State<Database>,
+    id: String,
+    status: SessionStatus,
+) -> Result<Session, AppError> {
+    let conn = db.conn()?;
+    sessions::set_status(&conn, &id, status)
+}
+
+#[tauri::command]
+pub fn touch_session(db: State<Database>, id: String) -> Result<Session, AppError> {
+    let conn = db.conn()?;
+    sessions::touch(&conn, &id)
+}
+
+#[tauri::command]
+pub fn delete_session(db: State<Database>, id: String) -> Result<(), AppError> {
+    let conn = db.conn()?;
+    sessions::delete(&conn, &id)
+}
+
+/// 按选定范围删除会话（仅本地 / 仅原生 / 两者）。
+///
+/// 范围与执行顺序全部由后端协调：`local` 只清理本地记录、绝不调用原生删除；
+/// `native` 只删除原生会话、保留本地记录；`both` 必须先成功删除原生会话再清理本地
+/// 记录。工具不支持 / 未核实原生删除时如实报错，绝不伪造能力或静默降级。
+#[tauri::command]
+pub fn delete_session_scoped(
+    db: State<Database>,
+    id: String,
+    scope: DeleteScope,
+) -> Result<DeleteOutcome, AppError> {
+    let conn = db.conn()?;
+    native::delete_session(
+        &conn,
+        &SystemNativeBackend::new(),
+        &SystemDetector::new(),
+        &id,
+        scope,
+    )
+}
+
+/// 某款工具的原生会话能力矩阵（支持 / 不支持 / 尚未核实）。
+#[tauri::command]
+pub fn session_capabilities(tool_id: String) -> Result<SessionCapabilities, AppError> {
+    Ok(native::capabilities_for(&tool_id))
+}
+
+/// 枚举某项目在某工具下的原生历史会话（只读，不写入记录）。
+#[tauri::command]
+pub fn list_native_sessions(
+    db: State<Database>,
+    project_id: String,
+    tool_id: String,
+) -> Result<Vec<NativeSessionInfo>, AppError> {
+    let conn = db.conn()?;
+    native::list_native(
+        &conn,
+        &SystemNativeBackend::new(),
+        &SystemDetector::new(),
+        &project_id,
+        &tool_id,
+    )
+}
+
+/// 将工具中的原生会话导入本地记录（幂等）；返回数据源状态与同步后的本地会话列表。
+#[tauri::command]
+pub fn sync_native_sessions(
+    db: State<Database>,
+    project_id: String,
+    tool_id: String,
+) -> Result<native::SyncOutcome, AppError> {
+    let conn = db.conn()?;
+    native::sync(
+        &conn,
+        &SystemNativeBackend::new(),
+        &SystemDetector::new(),
+        &project_id,
+        &tool_id,
+    )
+}
+
+/// 在指定项目目录下创建真实原生会话，并（默认）立即在工具中打开。
+#[tauri::command]
+pub fn create_native_session(
+    db: State<Database>,
+    launcher: State<SystemLauncher>,
+    guard: State<LaunchGuard>,
+    input: NativeCreateInput,
+) -> Result<NativeCreateOutcome, AppError> {
+    let conn = db.conn()?;
+    native::create(
+        &conn,
+        &SystemNativeBackend::new(),
+        &*launcher,
+        &guard,
+        &SystemDetector::new(),
+        input,
+    )
+}
+
+/// 恢复某条本地会话对应的原生会话；缺失时如实报错，绝不静默新建。
+#[tauri::command]
+pub fn restore_native_session(
+    db: State<Database>,
+    launcher: State<SystemLauncher>,
+    guard: State<LaunchGuard>,
+    id: String,
+) -> Result<LaunchResult, AppError> {
+    let conn = db.conn()?;
+    native::restore(
+        &conn,
+        &SystemNativeBackend::new(),
+        &*launcher,
+        &guard,
+        &SystemDetector::new(),
+        &id,
+    )
+}
+
+/// 重命名会话；`sync_native` 为真时同时修改原生标题（不支持则如实报错）。
+#[tauri::command]
+pub fn rename_native_session(
+    db: State<Database>,
+    id: String,
+    display_name: String,
+    sync_native: bool,
+) -> Result<RenameOutcome, AppError> {
+    let conn = db.conn()?;
+    native::rename(
+        &conn,
+        &SystemNativeBackend::new(),
+        &SystemDetector::new(),
+        &id,
+        &display_name,
+        sync_native,
+    )
 }

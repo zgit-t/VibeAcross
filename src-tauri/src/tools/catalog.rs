@@ -61,6 +61,11 @@ pub struct ToolDefinition {
     pub candidate_paths: &'static [&'static str],
     /// 注册表卸载项 `DisplayName` 匹配关键词（不区分大小写）。
     pub registry_keywords: &'static [&'static str],
+    /// 注册表卸载项 `DisplayName` **排除**关键词（不区分大小写）。
+    ///
+    /// 用于避免两个同品牌、名称互为子串的独立工具互相误识别（例如 Trae 的
+    /// 关键词 `Trae` 会匹配到 `TRAE SOLO CN`）。命中排除词即跳过该卸载项。
+    pub registry_exclude_keywords: &'static [&'static str],
     /// 注册表 `App Paths` 中登记的可执行文件名（精确匹配，不区分大小写）。
     ///
     /// 部分安装程序会把安装位置登记到
@@ -103,15 +108,45 @@ const CATALOG: &[ToolDefinition] = &[
             r"%PROGRAMW6432%\Trae CN\Trae CN.exe",
         ],
         registry_keywords: &["Trae"],
+        // TRAE SOLO 是独立工具（见下方 `trae-solo`），不得被 Trae 误识别。
+        registry_exclude_keywords: &["SOLO"],
         app_paths: &["Trae.exe", "Trae CN.exe"],
         auto_detect_reliable: true,
         version_args: &[],
-        detection_note: "候选安装目录（用户级/系统级）+ App Paths 注册表项 + 卸载注册表项（安装目录可在安装时更改）。",
+        detection_note: "候选安装目录（用户级/系统级）+ App Paths 注册表项 + 卸载注册表项 + 桌面/开始菜单快捷方式（安装目录可在安装时更改）。",
         // Trae 基于 VS Code 内核，接受以目录作为唯一参数打开。
         launch_plan: LaunchPlan::Method(LaunchMethod::FolderArgument),
         restore_plan: RestorePlan::Project,
         session_resume: SessionResumePlan::Unsupported(
             "Trae 为桌面 IDE，官方未公开可调用的会话恢复方式；仅支持重新打开项目。",
+        ),
+    },
+    ToolDefinition {
+        id: "trae-solo",
+        name: "TRAE SOLO",
+        vendor: "ByteDance",
+        description: "字节跳动的 SOLO（AI 自主开发流程）桌面应用，与 Trae IDE 相互独立。",
+        tool_type: ToolType::Desktop,
+        commands: &[],
+        candidate_paths: &[
+            r"%LOCALAPPDATA%\Programs\TRAE SOLO CN\TRAE SOLO CN.exe",
+            r"%PROGRAMFILES%\TRAE SOLO CN\TRAE SOLO CN.exe",
+            r"%PROGRAMFILES(X86)%\TRAE SOLO CN\TRAE SOLO CN.exe",
+            r"%PROGRAMW6432%\TRAE SOLO CN\TRAE SOLO CN.exe",
+        ],
+        // 与 Trae IDE 的可执行文件名严格区分，避免两者互相识别。
+        registry_keywords: &["TRAE SOLO"],
+        registry_exclude_keywords: &[],
+        app_paths: &["TRAE SOLO CN.exe"],
+        auto_detect_reliable: true,
+        version_args: &[],
+        detection_note: "候选安装目录（用户级/系统级）+ App Paths 注册表项（TRAE SOLO CN.exe）+ 卸载注册表项 + 桌面/开始菜单快捷方式（安装目录可在安装时更改）。",
+        // TRAE SOLO 与 Trae 同为 VS Code 内核（安装目录 `bin\trae-solo-cn.cmd` 即
+        // VS Code CLI 包装脚本），接受以目录作为唯一参数打开。
+        launch_plan: LaunchPlan::Method(LaunchMethod::FolderArgument),
+        restore_plan: RestorePlan::Project,
+        session_resume: SessionResumePlan::Unsupported(
+            "TRAE SOLO 为桌面应用，官方未公开可调用的会话恢复方式；仅支持重新打开项目。",
         ),
     },
     ToolDefinition {
@@ -132,17 +167,17 @@ const CATALOG: &[ToolDefinition] = &[
             r"%PROGRAMW6432%\WorkBuddy\WorkBuddy.exe",
         ],
         registry_keywords: &["WorkBuddy"],
+        registry_exclude_keywords: &[],
         app_paths: &["WorkBuddy.exe", "Tencent WorkBuddy.exe"],
         // 安装路径由用户自选，且可能通过应用商店安装，无法可靠判定未安装。
         auto_detect_reliable: false,
         version_args: &[],
-        detection_note: "卸载注册表项 + App Paths 注册表项 + 常见候选目录；安装位置不可预测，检测不到时不会判定为未安装。",
-        // 官方未提供可确认的命令行启动参数，保持保守，不假设与其它 IDE 相同。
-        launch_plan: LaunchPlan::Unsupported(
-            "尚未确认 WorkBuddy 的命令行启动参数，暂不支持受控启动。可在该应用中手动打开项目目录。",
-        ),
+        detection_note: "卸载注册表项 + App Paths 注册表项 + 常见候选目录 + 桌面/开始菜单快捷方式；安装位置不可预测，检测不到时不会判定为未安装。",
+        // 官方未提供可确认的项目目录命令行参数，因此采用经验证的安全启动方式：
+        // 以项目目录为工作目录、不注入任何参数地启动桌面应用（应用内需手动选择工作目录）。
+        launch_plan: LaunchPlan::Method(LaunchMethod::WorkingDirectory),
         restore_plan: RestorePlan::Unsupported(
-            "无法受控启动，因此也无法自动恢复工作环境。请在 WorkBuddy 中手动打开项目目录。",
+            "可受控启动，但 WorkBuddy 未提供公开的项目目录启动参数，无法自动打开指定项目；请在应用内手动选择工作目录。",
         ),
         session_resume: SessionResumePlan::Unsupported(
             "官方未公开可调用的会话恢复方式。",
@@ -160,6 +195,7 @@ const CATALOG: &[ToolDefinition] = &[
             r"%APPDATA%\npm\claude.cmd",
         ],
         registry_keywords: &[],
+        registry_exclude_keywords: &[],
         app_paths: &[],
         auto_detect_reliable: true,
         version_args: &["--version"],
@@ -168,7 +204,7 @@ const CATALOG: &[ToolDefinition] = &[
         launch_plan: LaunchPlan::Method(LaunchMethod::WorkingDirectory),
         restore_plan: RestorePlan::Project,
         session_resume: SessionResumePlan::DocumentedUnverified(
-            "官方 CLI 提供 `claude --resume <session-id>` / `--continue` 恢复会话，但需要已安装并在本机验证；本阶段不提供会话恢复操作。",
+            "官方 CLI 提供 `claude --session-id <uuid>` 创建与 `claude --resume <session-id>` / `--continue` 恢复会话，已在本机端到端核实；官方未提供机器可读的历史枚举与既有会话改名接口。",
         ),
     },
     ToolDefinition {
@@ -184,6 +220,7 @@ const CATALOG: &[ToolDefinition] = &[
             r"%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe",
         ],
         registry_keywords: &[],
+        registry_exclude_keywords: &[],
         app_paths: &[],
         auto_detect_reliable: true,
         version_args: &["--version"],
@@ -208,10 +245,11 @@ const CATALOG: &[ToolDefinition] = &[
             r"%PROGRAMW6432%\cursor\Cursor.exe",
         ],
         registry_keywords: &["Cursor"],
+        registry_exclude_keywords: &[],
         app_paths: &["Cursor.exe"],
         auto_detect_reliable: true,
         version_args: &[],
-        detection_note: "候选安装目录（用户级/系统级）+ App Paths 注册表项 + 卸载注册表项。",
+        detection_note: "候选安装目录（用户级/系统级）+ App Paths 注册表项 + 卸载注册表项 + 桌面/开始菜单快捷方式。",
         // Cursor 基于 VS Code 内核，接受以目录作为唯一参数打开。
         launch_plan: LaunchPlan::Method(LaunchMethod::FolderArgument),
         restore_plan: RestorePlan::Project,
@@ -231,6 +269,7 @@ const CATALOG: &[ToolDefinition] = &[
             r"%APPDATA%\npm\opencode.cmd",
         ],
         registry_keywords: &[],
+        registry_exclude_keywords: &[],
         app_paths: &[],
         auto_detect_reliable: true,
         version_args: &["--version"],

@@ -16,7 +16,7 @@ use vibeacross_lib::projects;
 use vibeacross_lib::tasks::{self, TaskInput, TaskPriority};
 use vibeacross_lib::tools::detect::{DetectError, Detector, RegistryInstall, VersionOutcome};
 use vibeacross_lib::tools::model::{
-    LaunchMethod, RestoreLevel, SessionResumeSupport, ToolConfigInput,
+    LaunchMethod, LaunchSupport, RestoreLevel, SessionResumeSupport, ToolConfigInput,
 };
 use vibeacross_lib::tools::service as tools;
 use vibeacross_lib::workspace::{self, WorkspaceSessionInput};
@@ -648,8 +648,10 @@ fn restore_capability_is_reported_per_tool() {
         SessionResumeSupport::DocumentedUnverified
     );
 
-    // WorkBuddy：无法受控启动 → 不可恢复。
+    // WorkBuddy：可受控启动（以项目目录为工作目录、不注入参数），但无公开的项目
+    // 目录启动参数、无法自动打开项目 → 不可自动恢复。
     let workbuddy = by_id(&wb_id);
+    assert_eq!(workbuddy.launch.support, LaunchSupport::Supported);
     assert_eq!(workbuddy.restore.level, RestoreLevel::None);
     assert_eq!(workbuddy.restore.session, SessionResumeSupport::Unsupported);
 }

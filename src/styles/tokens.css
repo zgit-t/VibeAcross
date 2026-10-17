@@ -47,6 +47,12 @@
   --transition-fast: 120ms ease;
   --transition-base: 180ms ease;
   --focus-ring: 0 0 0 2px var(--color-content-bg), 0 0 0 4px var(--color-accent);
+
+  /* 层叠顺序：抽屉 < 模态弹窗 < 浮层菜单。
+     模态弹窗可能从抽屉内打开（如项目详情里的新建会话），必须位于抽屉之上。 */
+  --z-drawer: 1000;
+  --z-modal: 1100;
+  --z-menu: 1200;
 }
 
 /* 深色主题（默认） */

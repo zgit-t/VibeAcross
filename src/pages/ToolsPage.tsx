@@ -240,79 +240,87 @@ export function ToolsPage() {
         ) : (
           <ul className={styles.list}>
             {filtered.map((tool) => {
+              // 路径与底部元信息的完整文本：正常宽度下截断显示，悬停时通过 title
+              // 提供完整内容，确保任何窗口尺寸下都能查看完整路径与时间。
+              const pathText =
+                tool.executablePath ?? tool.commandName ?? tool.description;
+              // 底部只保留「供应商 · 检测时间」。检测方式 / 来源 / 候选目录 /
+              // 注册表项等技术细节不再放入卡片，仍可在工具详情与诊断入口查看。
+              const metaText = [
+                tool.vendor,
+                tool.detectedAt
+                  ? t("tools.detectedAt", {
+                      time: formatDateTime(tool.detectedAt),
+                    })
+                  : null,
+              ]
+                .filter((part): part is string => Boolean(part && part.trim()))
+                .join(" · ");
+
               return (
                 <li key={tool.id} className={styles.row}>
-                  <span className={styles.icon} aria-hidden="true">
-                    <Wrench size={16} />
-                  </span>
-
-                  <div className={styles.main}>
-                    <div className={styles.titleRow}>
-                      <span className={styles.name}>{tool.name}</span>
-                      {tool.isDefault && (
-                        <Badge tone="accent">{t("tools.default")}</Badge>
-                      )}
-                      {tool.isCustom && (
-                        <Badge tone="accent">{t("tools.custom")}</Badge>
-                      )}
-                      {tool.source === "auto" && (
-                        <Badge tone="neutral">{t("tools.auto")}</Badge>
-                      )}
-                      {tool.source === "manual" && (
-                        <Badge tone="neutral">{t("tools.manual")}</Badge>
-                      )}
-                      <span className={styles.type}>
-                        {t(TOOL_TYPE_KEY[tool.toolType])}
-                      </span>
-                    </div>
-                    <span className={styles.description}>
-                      {tool.executablePath ?? tool.commandName ?? tool.description}
+                  <div className={styles.info}>
+                    <span className={styles.icon} aria-hidden="true">
+                      <Wrench size={16} />
                     </span>
-                    <span className={styles.meta}>
-                      {tool.version && (
-                        <>{t("tools.version", { version: tool.version })} · </>
-                      )}
-                      {tool.detectedAt && (
-                        <>
-                          {t("tools.detectedAt", {
-                            time: formatDateTime(tool.detectedAt),
-                          })}{" "}
-                          ·{" "}
-                        </>
-                      )}
-                      {tool.lastError ? (
-                        tool.lastError
-                      ) : !tool.autoDetectReliable ? (
-                        tool.detectionNote
-                      ) : (
-                        tool.detectionMethod ?? tool.detectionNote
-                      )}
-                    </span>
-                  </div>
 
-                  <span className={styles.vendor}>{tool.vendor}</span>
+                    <div className={styles.main}>
+                      <div className={styles.titleRow}>
+                        <span className={styles.name} title={tool.name}>
+                          {tool.name}
+                        </span>
+                        {tool.isDefault && (
+                          <Badge tone="accent">{t("tools.default")}</Badge>
+                        )}
+                        {tool.isCustom && (
+                          <Badge tone="accent">{t("tools.custom")}</Badge>
+                        )}
+                        {tool.source === "auto" && (
+                          <Badge tone="neutral">{t("tools.auto")}</Badge>
+                        )}
+                        {tool.source === "manual" && (
+                          <Badge tone="neutral">{t("tools.manual")}</Badge>
+                        )}
+                        <span className={styles.type}>
+                          {t(TOOL_TYPE_KEY[tool.toolType])}
+                        </span>
+                      </div>
 
-                  <div className={styles.statusCell}>
-                    <Badge
-                      tone={getStatusTone(tool.status)}
-                      icon={STATUS_ICONS[tool.status]}
-                    >
-                      {t(TOOL_STATUS_KEY[tool.status])}
-                    </Badge>
-
-                    {tool.installed && (
-                      <span
-                        className={styles.launchBadge}
-                        title={tool.launch.reason}
-                      >
+                      <div className={styles.statusCell}>
                         <Badge
-                          tone={LAUNCH_SUPPORT_TONE[tool.launch.support]}
-                          icon={LAUNCH_ICONS[tool.launch.support]}
+                          tone={getStatusTone(tool.status)}
+                          icon={STATUS_ICONS[tool.status]}
                         >
-                          {t(LAUNCH_SUPPORT_KEY[tool.launch.support])}
+                          {t(TOOL_STATUS_KEY[tool.status])}
                         </Badge>
+                        {tool.installed && (
+                          <span
+                            className={styles.launchBadge}
+                            title={tool.launch.reason}
+                          >
+                            <Badge
+                              tone={LAUNCH_SUPPORT_TONE[tool.launch.support]}
+                              icon={LAUNCH_ICONS[tool.launch.support]}
+                            >
+                              {t(LAUNCH_SUPPORT_KEY[tool.launch.support])}
+                            </Badge>
+                          </span>
+                        )}
+                      </div>
+
+                      <span
+                        className={styles.description}
+                        title={pathText}
+                        data-selectable="true"
+                      >
+                        {pathText}
                       </span>
-                    )}
+                      {metaText && (
+                        <span className={styles.meta} title={metaText}>
+                          {metaText}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className={styles.actions}>

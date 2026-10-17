@@ -2,6 +2,10 @@
   margin: 0;
   padding: 0;
   list-style: none;
+  /* 作为容器查询上下文：卡片布局依据「列表自身宽度」自适应，
+     而不是依据窗口宽度。这样同一个列表放在窄的项目详情抽屉里时
+     也能切换到紧凑布局，而不是被父容器 overflow:hidden 裁掉。 */
+  container-type: inline-size;
 }
 
 .row {
@@ -159,7 +163,9 @@
   font-size: var(--font-size-sm);
 }
 
-@media (max-width: 900px) {
+/* 依据列表容器宽度（而非窗口宽度）切换紧凑布局：
+   项目详情抽屉内的列表很窄，但窗口通常很宽，旧的 @media 不会触发。 */
+@container (max-width: 720px) {
   .row {
     grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-areas:
@@ -180,6 +186,8 @@
   .badges {
     grid-area: badges;
     justify-self: start;
+    min-width: 0;
+    flex-wrap: wrap;
   }
 
   .time {

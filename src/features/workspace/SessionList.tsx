@@ -12,8 +12,6 @@ import { formatDateTime, formatRelativeTime } from "../../utils/format";
 import type { ToolEntry, WorkspaceSession } from "../../types/domain";
 import {
   getSessionState,
-  RESTORE_LEVEL_KEY,
-  RESTORE_LEVEL_TONE,
   RESTORE_STATUS_KEY,
   restorableTools,
   sessionName,
@@ -98,9 +96,6 @@ export function SessionList({
               <div className={styles.main}>
                 <div className={styles.titleRow}>
                   <span className={styles.title}>{sessionName(session)}</span>
-                  <Badge tone={RESTORE_LEVEL_TONE[session.restoreLevel]}>
-                    {t(RESTORE_LEVEL_KEY[session.restoreLevel])}
-                  </Badge>
                   <Badge tone={state.tone}>{t(state.labelKey)}</Badge>
                 </div>
 
@@ -173,10 +168,6 @@ export function SessionList({
                     </span>
                   )}
                 </div>
-
-                {!state.canRestore && (
-                  <p className={styles.hint}>{t(state.detailKey)}</p>
-                )}
               </div>
 
               <div className={styles.controls}>

@@ -12,6 +12,8 @@ use vibeacross_lib::launch::{
     self, LaunchError, LaunchGuard, LaunchMode, LaunchSpec, LaunchTarget, ProcessLauncher,
 };
 use vibeacross_lib::projects;
+use vibeacross_lib::project_tools;
+use vibeacross_lib::sessions::{self, SessionInput, SessionQuery};
 use vibeacross_lib::tools::detect::{DetectError, Detector, RegistryInstall, VersionOutcome};
 use vibeacross_lib::tools::model::{LaunchMethod, LaunchSupport, ToolConfigInput, ToolStatus, ToolType};
 use vibeacross_lib::tools::service as tools;
@@ -253,6 +255,130 @@ fn project_tool_association_survives_reopen() {
 }
 
 #[test]
+fn setting_current_tool_creates_association() {
+    let workspace = tempfile::tempdir().unwrap();
+    let db = memory_db();
+    let conn = db.conn().unwrap();
+
+    let exe_a = stub_exe(workspace.path(), "ToolA.exe");
+    let exe_b = stub_exe(workspace.path(), "ToolB.exe");
+    let detector = StubDetector::new().with_file(&exe_a).with_file(&exe_b);
+
+    let project = projects::create_project(&conn, "P", workspace.path().to_str().unwrap()).unwrap();
+    let cursor_id = add_tool(&conn, &detector, tool_input("cursor", &exe_a));
+    let trae_id = add_tool(&conn, &detector, tool_input("trae", &exe_b));
+
+    // 设置当前工具会自动建立关联，无需先手动关联。
+    launch::set_project_tool(&conn, &project.id, Some(&cursor_id), &detector).unwrap();
+    let associations = project_tools::list_for_project(&conn, &project.id).unwrap();
+    assert_eq!(associations.len(), 1);
+    assert_eq!(associations[0].tool_id, cursor_id);
+
+    // 重复设置同一工具是幂等的，不产生重复关联。
+    launch::set_project_tool(&conn, &project.id, Some(&cursor_id), &detector).unwrap();
+    assert_eq!(
+        project_tools::list_for_project(&conn, &project.id).unwrap().len(),
+        1
+    );
+
+    // 切换到另一工具同样自动关联，且保留原有工具的关联。
+    launch::set_project_tool(&conn, &project.id, Some(&trae_id), &detector).unwrap();
+    let associations = project_tools::list_for_project(&conn, &project.id).unwrap();
+    assert_eq!(associations.len(), 2);
+    let listed_after = projects::get_project(&conn, &project.id).unwrap();
+    assert_eq!(
+        listed_after.default_tool_id.as_deref(),
+        Some(trae_id.as_str())
+    );
+}
+
+#[test]
+fn switching_current_tool_keeps_existing_sessions() {
+    let workspace = tempfile::tempdir().unwrap();
+    let db = memory_db();
+    let conn = db.conn().unwrap();
+
+    let exe_a = stub_exe(workspace.path(), "ToolA.exe");
+    let exe_b = stub_exe(workspace.path(), "ToolB.exe");
+    let detector = StubDetector::new().with_file(&exe_a).with_file(&exe_b);
+
+    let project = projects::create_project(&conn, "P", workspace.path().to_str().unwrap()).unwrap();
+    let cursor_id = add_tool(&conn, &detector, tool_input("cursor", &exe_a));
+    let trae_id = add_tool(&conn, &detector, tool_input("trae", &exe_b));
+
+    launch::set_project_tool(&conn, &project.id, Some(&cursor_id), &detector).unwrap();
+    let cursor_session = sessions::create(
+        &conn,
+        SessionInput {
+            project_id: project.id.clone(),
+            tool_id: cursor_id.clone(),
+            display_name: "Cursor 会话".to_string(),
+            native_session_id: None,
+            working_directory: None,
+        },
+    )
+    .unwrap();
+
+    // 切换到另一个工具，不应影响已存在工具的关联与其会话。
+    launch::set_project_tool(&conn, &project.id, Some(&trae_id), &detector).unwrap();
+
+    let associations = project_tools::list_for_project(&conn, &project.id).unwrap();
+    assert_eq!(associations.len(), 2);
+    let cursor_assoc = associations
+        .iter()
+        .find(|assoc| assoc.tool_id == cursor_id)
+        .expect("cursor 关联应保留");
+    assert_eq!(cursor_assoc.session_count, 1);
+
+    let kept = sessions::get(&conn, &cursor_session.id).unwrap();
+    assert_eq!(kept.tool_id, cursor_id);
+    let all = sessions::list(&conn, &SessionQuery::default()).unwrap();
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0].id, cursor_session.id);
+}
+
+#[test]
+fn removing_association_clears_current_tool_only_when_it_matches() {
+    let workspace = tempfile::tempdir().unwrap();
+    let db = memory_db();
+    let conn = db.conn().unwrap();
+
+    let exe_a = stub_exe(workspace.path(), "ToolA.exe");
+    let exe_b = stub_exe(workspace.path(), "ToolB.exe");
+    let detector = StubDetector::new().with_file(&exe_a).with_file(&exe_b);
+
+    let project = projects::create_project(&conn, "P", workspace.path().to_str().unwrap()).unwrap();
+    let cursor_id = add_tool(&conn, &detector, tool_input("cursor", &exe_a));
+    let trae_id = add_tool(&conn, &detector, tool_input("trae", &exe_b));
+
+    launch::set_project_tool(&conn, &project.id, Some(&cursor_id), &detector).unwrap();
+    launch::set_project_tool(&conn, &project.id, Some(&trae_id), &detector).unwrap();
+
+    // 当前工具是 trae；删除 cursor 的关联不应改变当前工具。
+    let cursor_assoc = project_tools::find(&conn, &project.id, &cursor_id)
+        .unwrap()
+        .expect("应存在 cursor 关联");
+    project_tools::remove(&conn, &cursor_assoc.id).unwrap();
+    let after_unrelated = projects::get_project(&conn, &project.id).unwrap();
+    assert_eq!(
+        after_unrelated.default_tool_id.as_deref(),
+        Some(trae_id.as_str()),
+        "删除非当前工具的关联不应改变当前工具"
+    );
+
+    // 删除当前工具（trae）的关联后，当前工具应被置空，而不是改指其它工具。
+    let trae_assoc = project_tools::find(&conn, &project.id, &trae_id)
+        .unwrap()
+        .expect("应存在 trae 关联");
+    project_tools::remove(&conn, &trae_assoc.id).unwrap();
+    let cleared = projects::get_project(&conn, &project.id).unwrap();
+    assert!(
+        cleared.default_tool_id.is_none(),
+        "删除当前工具关联后应清空当前工具"
+    );
+}
+
+#[test]
 fn set_project_tool_rejects_unknown_or_unavailable_tool() {
     let workspace = tempfile::tempdir().unwrap();
     let db = memory_db();
@@ -396,7 +522,8 @@ fn custom_cli_tool_is_supported_but_custom_desktop_is_not() {
 }
 
 #[test]
-fn workbuddy_launch_is_reported_as_unsupported() {
+fn workbuddy_launches_detached_in_project_directory_without_args() {
+    // WorkBuddy 无公开的项目目录启动参数：以项目目录为工作目录、不注入参数启动。
     let workspace = tempfile::tempdir().unwrap();
     let project_dir = workspace.path().join("proj");
     std::fs::create_dir(&project_dir).unwrap();
@@ -412,9 +539,20 @@ fn workbuddy_launch_is_reported_as_unsupported() {
     let tool_id = add_tool(&conn, &detector, tool_input("workbuddy", &exe));
     launch::set_project_tool(&conn, &project.id, Some(&tool_id), &detector).unwrap();
 
-    let error = launch::launch(&conn, &launcher, &guard, &project.id, None, &detector).unwrap_err();
-    assert_eq!(error.code, "LAUNCH_UNSUPPORTED");
-    assert_eq!(launcher.count(), 0);
+    let result = launch::launch(&conn, &launcher, &guard, &project.id, None, &detector).unwrap();
+    assert_eq!(result.method, LaunchMethod::WorkingDirectory);
+    assert_eq!(result.tool_name, "WorkBuddy");
+    assert!(!result.context_initialized);
+
+    let spec = launcher.last();
+    assert_eq!(spec.mode, LaunchMode::Detached);
+    assert!(
+        spec.args.is_empty(),
+        "WorkBuddy 不应被注入任何参数：{:?}",
+        spec.args
+    );
+    assert_eq!(spec.working_dir, PathBuf::from(&project.path));
+    assert_eq!(spec.executable.file_name().unwrap(), "WorkBuddy.exe");
 }
 
 #[test]
