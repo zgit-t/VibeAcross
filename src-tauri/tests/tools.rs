@@ -800,6 +800,94 @@ fn desktop_catalog_covers_arch_virtualized_paths_and_app_paths() {
 
 
 #[test]
+fn opencode_desktop_is_a_distinct_desktop_definition_not_on_path() {
+    let desktop = vibeacross_lib::tools::catalog::find("opencode-desktop")
+        .expect("应登记 opencode-desktop 内置定义");
+    assert_eq!(desktop.tool_type, ToolType::Desktop);
+    assert_eq!(desktop.id, "opencode-desktop");
+    // 与 CLI 定义是两个独立工具。
+    assert_ne!(desktop.id, "opencode");
+    // 桌面应用绝不注册 PATH 命令（否则会被 CLI 命令误识别）。
+    assert!(desktop.commands.is_empty(), "桌面应用不应有 PATH 命令候选");
+    // 需要 App Paths / 快捷方式匹配的可执行文件名。
+    assert!(desktop.app_paths.contains(&"OpenCode.exe"));
+    // 安装位置可自定义，检测不到时不判定为「未安装」。
+    assert!(!desktop.auto_detect_reliable);
+    // 不查询版本，避免打开图形界面。
+    assert!(desktop.version_args.is_empty());
+}
+
+#[test]
+fn opencode_cli_alone_does_not_mark_desktop_installed() {
+    let db = memory_db();
+    let conn = db.conn().unwrap();
+    let cli_exe = r"C:\Users\me\.opencode\bin\opencode.exe";
+    let detector = FakeDetector::new()
+        .with_command("opencode", cli_exe)
+        .with_file(cli_exe)
+        .with_version(cli_exe, "1.19.0");
+
+    let state = service::detect_tools(&conn, &detector, None).unwrap();
+
+    // CLI 被识别。
+    let cli = find(&state, "opencode");
+    assert_eq!(cli.status, ToolStatus::Detected);
+    assert_eq!(cli.executable_path.as_deref(), Some(cli_exe));
+
+    // 仅存在 CLI 时，桌面应用绝不能被判定为已安装。
+    let desktop = find(&state, "opencode-desktop");
+    assert_ne!(desktop.status, ToolStatus::Detected);
+    assert_eq!(desktop.executable_path, None);
+    assert!(!desktop.installed);
+}
+
+#[test]
+fn opencode_desktop_and_cli_are_detected_independently() {
+    let db = memory_db();
+    let conn = db.conn().unwrap();
+    let cli_exe = r"C:\Users\me\.opencode\bin\opencode.exe";
+    let desktop_exe = r"C:\Users\me\AppData\Local\Programs\OpenCode\OpenCode.exe";
+    let detector = FakeDetector::new()
+        .with_command("opencode", cli_exe)
+        .with_file(cli_exe)
+        .with_file(desktop_exe)
+        .with_app_path("OpenCode.exe", desktop_exe);
+
+    let state = service::detect_tools(&conn, &detector, None).unwrap();
+
+    let cli = find(&state, "opencode");
+    let desktop = find(&state, "opencode-desktop");
+    assert_eq!(cli.status, ToolStatus::Detected);
+    assert_eq!(desktop.status, ToolStatus::Detected);
+    // 两者指向各自的可执行文件，互不混淆。
+    assert_eq!(desktop.executable_path.as_deref(), Some(desktop_exe));
+    assert_ne!(cli.executable_path.as_deref(), desktop.executable_path.as_deref());
+
+    // 桌面应用为独立桌面类工具，可受控启动（以项目目录为工作目录，不注入参数）。
+    assert_eq!(desktop.tool_type, ToolType::Desktop);
+    assert_eq!(desktop.launch.support, LaunchSupport::Supported);
+    assert_eq!(desktop.launch.method, Some(LaunchMethod::WorkingDirectory));
+    // 不谎报会话恢复能力。
+    assert_eq!(desktop.restore.level, vibeacross_lib::tools::model::RestoreLevel::None);
+}
+
+#[test]
+fn opencode_desktop_detected_via_shortcut_for_custom_install() {
+    let db = memory_db();
+    let conn = db.conn().unwrap();
+    // 用户在安装时选择了自定义目录，只能经由桌面 / 开始菜单快捷方式定位。
+    let desktop_exe = r"D:\OpenCode\OpenCode.exe";
+    let detector = FakeDetector::new()
+        .with_file(desktop_exe)
+        .with_shortcut(r"C:\Users\me\Desktop\OpenCode.lnk", desktop_exe);
+
+    let state = service::detect_tools(&conn, &detector, None).unwrap();
+    let desktop = find(&state, "opencode-desktop");
+    assert_eq!(desktop.status, ToolStatus::Detected);
+    assert_eq!(desktop.executable_path.as_deref(), Some(desktop_exe));
+}
+
+#[test]
 fn resolve_in_paths_prefers_executable_over_script() {
     let workspace = tempfile::tempdir().unwrap();
     let dir = workspace.path();

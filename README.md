@@ -6,7 +6,7 @@ VibeAcross is a **local-first desktop workspace manager** for developers who bui
 
 All data is stored **locally** in a SQLite database on your own computer. There is no server, no account, no cloud sync, and no built-in LLM API.
 
-> **Status:** release (`v1.0.0`). No prebuilt installers are published yet — build from source (see [Installation](#installation)).
+> **Status:** release (`v1.1.0`). No prebuilt installers are published yet — build from source (see [Installation](#installation)).
 
 ## Why VibeAcross exists
 
@@ -31,7 +31,7 @@ VibeAcross is a single local hub that:
 
 - **Project management** — Import local project folders, give them a name and notes, set a default tool, open them in the system file explorer, or copy their path.
 - **Project health** — Check whether a project folder still exists and whether its default tool is ready, and relocate a moved folder without touching your source files.
-- **AI tool detection & configuration** — Detect six built-in tools via `PATH`, common install directories, Windows uninstall registry entries, and shortcuts; add or manually configure a custom tool when automatic detection is not reliable.
+- **AI tool detection & configuration** — Detect seven built-in tools via `PATH`, common install directories, Windows uninstall registry entries, and shortcuts; add or manually configure a custom tool when automatic detection is not reliable.
 - **Tasks** — Per-project tasks with title, description, status, priority, and due date.
 - **Work contexts (Sessions page)** — Save a project + tool + task combination and restore it later. Level-1 restore reopens the project directory and the selected tool.
 - **Native AI sessions** — In a project's detail view, create / list / resume / rename sessions for tools that support it, with a per-tool capability matrix shown in the UI.
@@ -41,11 +41,12 @@ VibeAcross is a single local hub that:
 
 ## Supported AI tools
 
-VibeAcross ships with built-in definitions for six tools. Detection and configuration work for all of them; **native session operations depend on each tool providing a real, verified mechanism**, so they differ per tool.
+VibeAcross ships with built-in definitions for seven tools. Detection and configuration work for all of them; **native session operations depend on each tool providing a real, verified mechanism**, so they differ per tool.
 
 | Tool | Type | Launch project | Create session | List sessions | Resume session | Rename session |
 | --- | --- | --- | --- | --- | --- | --- |
 | **OpenCode** | CLI | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **OpenCode Desktop** | Desktop | ✅ * | ❌ | ❌ | ❌ | ❌ |
 | **Claude Code** | CLI | ✅ | ✅ | ❌ | ✅ | ❌ |
 | **OpenAI Codex CLI** | CLI | ✅ | ⚠️ not verified | ⚠️ not verified | ⚠️ not verified | ⚠️ not verified |
 | **Cursor** | Desktop | ✅ | ❌ | ❌ | ❌ | ❌ |
@@ -56,10 +57,11 @@ Legend: ✅ supported and verified on Windows · ❌ not supported by the tool �
 
 Notes:
 
-- **Launch project** means opening the project directory with the tool: CLI tools start with the project as the working directory; Cursor and Trae open the folder directly. For **WorkBuddy** `*`, the app starts with the project as the working directory only — the official app exposes no public "open this folder" argument, so you select the working directory inside WorkBuddy yourself.
+- **Launch project** means opening the project directory with the tool: CLI tools start with the project as the working directory; Cursor and Trae open the folder directly. For **WorkBuddy** and **OpenCode Desktop** `*`, the app starts with the project as the working directory only — no public "open this folder" argument is verified, so you select the working directory inside the app yourself.
+- **OpenCode Desktop** is a separate, GUI-only application from the **OpenCode** CLI: it registers no `PATH` command, and its detection deliberately ignores the shared uninstall-registry name to avoid mistaking the CLI for the desktop app. Its embedded local service is not equivalent to the CLI session interface, so no native session operations are offered.
 - **OpenCode** native sessions are end-to-end verified: create / list / resume / rename.
 - **Claude Code** supports `claude --session-id <uuid>` to create and `claude --resume <id>` to resume (verified). It provides no machine-readable history listing and no rename for existing sessions.
-- **Cursor / Trae / WorkBuddy** are desktop applications without a public CLI session interface, so native session actions are not offered.
+- **Cursor / Trae / WorkBuddy / OpenCode Desktop** are desktop applications without a public CLI session interface, so native session actions are not offered.
 - Only **session metadata** (IDs, titles, directories, timestamps) is read. VibeAcross never reads or stores conversation content, and never reads or modifies any tool's private database.
 - A custom tool can be added through the Tools page; its native session support is marked "not verified" unless a mechanism is confirmed.
 
@@ -98,8 +100,8 @@ Build output (`src-tauri/target/release/`):
 
 - The runnable application: `vibeacross.exe`
 - Installers under `src-tauri/target/release/bundle/`:
-  - `msi/VibeAcross_1.0.0_x64_zh-CN.msi`
-  - `nsis/VibeAcross_1.0.0_x64-setup.exe`
+  - `msi/VibeAcross_1.1.0_x64_zh-CN.msi`
+  - `nsis/VibeAcross_1.1.0_x64-setup.exe`
 
 The installer contains only what is needed to run the app; it does not include source code, development databases, or temporary files. Installing or uninstalling does not touch your data in `%APPDATA%\com.vibeacross.app`.
 
@@ -108,7 +110,7 @@ For a development run instead of a packaged build, see [Development](#developmen
 ## First launch
 
 1. Start VibeAcross. On first run it creates a local SQLite database automatically (see [Where is my data?](#where-is-my-data)).
-2. Open **Tools** to see which of the six built-in tools were detected on this machine. If a tool is missing or detected unreliably, click **Add tool** and provide either its executable path or its command name.
+2. Open **Tools** to see which of the seven built-in tools were detected on this machine. If a tool is missing or detected unreliably, click **Add tool** and provide either its executable path or its command name.
 3. Optionally open **Settings** to choose your interface language, theme, default project folder, and default development tool.
 
 No AI tool needs an account or API key configured inside VibeAcross — the app only launches tools that you have already installed and signed in to.

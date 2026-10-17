@@ -134,6 +134,17 @@ impl HistorySource {
                 limitations: "仅读取会话元数据（id / 标题 / 时间 / cwd）；数据库以只读方式打开，不修改 / 迁移 / 删除。"
                     .to_string(),
             },
+            "opencode-desktop" => HistorySource {
+                kind: HistorySourceKind::None,
+                completeness: HistoryCompleteness::None,
+                stable_native_id: false,
+                reads_messages: false,
+                can_restore: false,
+                summary: "OpenCode 桌面应用为图形界面应用，未核实其可只读访问的本地历史来源；不沿用命令行工具（opencode）的服务接口。"
+                    .to_string(),
+                limitations: "与 OpenCode 命令行工具的会话数据相互独立，未确认可在不破坏数据的前提下枚举；因此不提供历史会话查询，也不读取其任何数据。"
+                    .to_string(),
+            },
             _ => HistorySource {
                 kind: HistorySourceKind::None,
                 completeness: HistoryCompleteness::None,
@@ -249,6 +260,21 @@ mod tests {
         assert_eq!(source.completeness, HistoryCompleteness::None);
         assert!(!source.stable_native_id);
         assert!(!source.can_restore);
+    }
+
+    #[test]
+    fn opencode_desktop_has_no_history_source_and_is_distinct_from_cli() {
+        let desktop = HistorySource::for_tool("opencode-desktop");
+        assert_eq!(desktop.kind, HistorySourceKind::None);
+        assert_eq!(desktop.completeness, HistoryCompleteness::None);
+        assert!(!desktop.stable_native_id);
+        assert!(!desktop.reads_messages);
+        assert!(!desktop.can_restore);
+        // 绝不能沿用命令行工具（opencode）的服务来源。
+        let cli = HistorySource::for_tool("opencode");
+        assert_eq!(cli.kind, HistorySourceKind::Service);
+        assert!(cli.can_restore);
+        assert_ne!(desktop.kind, cli.kind);
     }
 
     #[test]

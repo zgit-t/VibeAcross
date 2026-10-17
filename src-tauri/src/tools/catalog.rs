@@ -47,7 +47,7 @@ pub enum SessionResumePlan {
 
 /// 内置工具定义。
 ///
-/// 这些定义是「产品支持的六款工具」的静态描述，不保存到数据库。
+/// 这些定义是「产品支持的七款工具」的静态描述，不保存到数据库。
 /// 检测结果与用户配置保存在 `tool_installations` 表中，二者按 `id` 关联。
 pub struct ToolDefinition {
     pub id: &'static str,
@@ -278,6 +278,45 @@ const CATALOG: &[ToolDefinition] = &[
         restore_plan: RestorePlan::Project,
         session_resume: SessionResumePlan::DocumentedUnverified(
             "官方 CLI 提供 `opencode --session <id>` / `opencode --continue` 恢复会话，但需要已安装并在本机验证；本阶段不提供会话恢复操作。",
+        ),
+    },
+    ToolDefinition {
+        id: "opencode-desktop",
+        name: "OpenCode Desktop",
+        vendor: "OpenCode",
+        description: "OpenCode 官方桌面应用（图形界面），与 OpenCode 命令行工具相互独立。",
+        tool_type: ToolType::Desktop,
+        // 桌面应用不注册 PATH 命令，绝不使用 CLI 的 `opencode` 命令来识别它。
+        commands: &[],
+        candidate_paths: &[
+            r"%LOCALAPPDATA%\Programs\@opencode-aidesktop\OpenCode.exe",
+            r"%LOCALAPPDATA%\Programs\OpenCode\OpenCode.exe",
+            r"%LOCALAPPDATA%\OpenCode\OpenCode.exe",
+            r"%PROGRAMFILES%\OpenCode\OpenCode.exe",
+            r"%PROGRAMFILES(X86)%\OpenCode\OpenCode.exe",
+            r"%PROGRAMW6432%\OpenCode\OpenCode.exe",
+        ],
+        // 有意不使用「卸载注册表项」来源：OpenCode CLI 通过包管理器安装时同样
+        // 会登记名为 OpenCode 的卸载项，而两者可执行文件名（OpenCode.exe /
+        // opencode.exe）在 Windows 上大小写不敏感、无法区分，据此会把 CLI 误判
+        // 为桌面应用。宁可少一处来源，也不误报。
+        registry_keywords: &[],
+        registry_exclude_keywords: &[],
+        app_paths: &["OpenCode.exe"],
+        // 安装位置可被用户在安装时更改（观测到自定义目录，例如 D:\OpenCode），
+        // 且为避免与 CLI 混淆而刻意省略卸载注册表来源；因此检测不到时不判定「未安装」。
+        auto_detect_reliable: false,
+        // 绝不查询版本：OpenCode.exe 是图形程序，带 --version 启动只会打开界面。
+        version_args: &[],
+        detection_note: "候选安装目录（用户级 Programs / LOCALAPPDATA / 系统级）+ App Paths 注册表项 + 桌面/开始菜单快捷方式；有意不使用 PATH 命令与卸载注册表项，避免把 OpenCode 命令行工具误判为桌面应用。",
+        // 未核实桌面应用的项目目录命令行参数，采用经验证的安全启动方式：以项目目录
+        // 作为工作目录、不注入任何参数地启动（应用内需手动打开项目）。
+        launch_plan: LaunchPlan::Method(LaunchMethod::WorkingDirectory),
+        restore_plan: RestorePlan::Unsupported(
+            "可受控启动，但未核实 OpenCode 桌面应用的项目目录启动参数，无法自动打开指定项目；请在应用内手动打开该目录。",
+        ),
+        session_resume: SessionResumePlan::Unsupported(
+            "OpenCode 桌面应用为图形界面，其内嵌服务与命令行会话接口不等同；官方未公开可用于脚本的会话创建 / 恢复机制。",
         ),
     },
 ];

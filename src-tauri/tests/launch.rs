@@ -556,6 +556,42 @@ fn workbuddy_launches_detached_in_project_directory_without_args() {
 }
 
 #[test]
+fn opencode_desktop_launches_detached_in_project_directory_without_args() {
+    // OpenCode 桌面应用未核实项目目录启动参数：以项目目录为工作目录、不注入参数启动，
+    // 且绝不冒充创建 / 恢复会话。
+    let workspace = tempfile::tempdir().unwrap();
+    let project_dir = workspace.path().join("proj");
+    std::fs::create_dir(&project_dir).unwrap();
+    let exe = stub_exe(workspace.path(), "OpenCode.exe");
+
+    let db = memory_db();
+    let conn = db.conn().unwrap();
+    let detector = StubDetector::new().with_file(&exe);
+    let launcher = RecordingLauncher::new();
+    let guard = LaunchGuard::new();
+
+    let project = projects::import_project(&conn, project_dir.to_str().unwrap(), None).unwrap();
+    let tool_id = add_tool(&conn, &detector, tool_input("opencode-desktop", &exe));
+    launch::set_project_tool(&conn, &project.id, Some(&tool_id), &detector).unwrap();
+
+    let result = launch::launch(&conn, &launcher, &guard, &project.id, None, &detector).unwrap();
+    assert_eq!(result.method, LaunchMethod::WorkingDirectory);
+    assert_eq!(result.tool_name, "OpenCode Desktop");
+    // 普通「打开应用」不注入会话参数，不得声称已初始化上下文。
+    assert!(!result.context_initialized);
+
+    let spec = launcher.last();
+    assert_eq!(spec.mode, LaunchMode::Detached);
+    assert!(
+        spec.args.is_empty(),
+        "OpenCode 桌面应用不应被注入任何参数：{:?}",
+        spec.args
+    );
+    assert_eq!(spec.working_dir, PathBuf::from(&project.path));
+    assert_eq!(spec.executable.file_name().unwrap(), "OpenCode.exe");
+}
+
+#[test]
 fn script_based_cli_launches_via_command_interpreter() {
     // Windows 上 npm 安装的 CLI 工具通常只有 `.cmd` 入口；必须经受控的命令解释器启动。
     let workspace = tempfile::tempdir().unwrap();

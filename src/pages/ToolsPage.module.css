@@ -51,10 +51,14 @@
    左栏弹性自适应、右栏固定区间宽度，因此无论工具是否已检测、标签或按钮
    多少，分隔线位置与整体分栏结构在所有卡片上完全一致。
    两栏高度对齐（align-items: stretch），分隔线随卡片高度延伸；
-   overflow: hidden 让分隔线止于圆角内部，不穿出卡片边缘。 */
+   overflow: hidden 让分隔线止于圆角内部，不穿出卡片边缘。
+   右栏最小宽度需容纳英文按钮两行排布：已检测工具在英文下最多 4 个按钮
+   （Set as default / Configure / Detect again / Remove），两行所需内容宽度约
+   238px，加上左右各 16px 内边距后约 270px，故将下限提高到 296px，保证中英文
+   及正常 / 较窄窗口下操作区都稳定维持两行，不因文本变长而多出一行。 */
 .row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(240px, 28%, 320px);
+  grid-template-columns: minmax(0, 1fr) clamp(296px, 30%, 360px);
   align-items: stretch;
   background: var(--color-content-bg);
   border: 1px solid var(--color-border);
@@ -160,33 +164,38 @@
 }
 
 /* 右栏：全部操作按钮集中于此，右对齐。
-   宽度由卡片 Grid 的固定区间列统一约束，与工具状态、标签数量、
-   操作数量无关，因此所有卡片的右栏起始位置一致。 */
+   使用「固定两列 Grid」而非自动换行，从结构上保证操作区最多两行，
+   与工具是否已检测、按钮数量无关：
+   - 每个按钮按 DOM 顺序从左上开始填充两列（第 1、2 个在第一行，
+     第 3、4 个在第二行），因此英文下 Detect again 与 Remove 始终并排，
+     不会因为文本变长被挤成第三行；
+   - 列宽取该列按钮的最大内容宽度（minmax(0, max-content)），按钮保持
+     固有宽度、不压缩文字，两列一起在右栏内右对齐；
+   - 已检测与未检测工具共用同一套规则，操作区布局完全一致。 */
 .actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, max-content));
   align-content: center;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: end;
+  justify-items: end;
   gap: var(--space-1) var(--space-2);
   padding: var(--space-3) var(--space-4);
   border-left: 1px solid var(--color-border);
 }
 
-/* 按钮保持固有宽度，宁可换行也不压缩文字 / 图标。 */
-.actions > * {
-  flex-shrink: 0;
-}
-
 /* 窄容器：两栏无法再保持合理最小宽度时，所有卡片统一切换为上下布局，
-   竖向分隔线改为信息栏与操作栏之间的横向分隔线。 */
-@container (max-width: 640px) {
+   竖向分隔线改为信息栏与操作栏之间的横向分隔线。
+   断点 = 左栏最小宽度(400px) + 右栏最小宽度(296px)，与卡片两栏的最窄需求
+   对齐；低于该宽度时信息栏会被压缩到难以完整显示名称与标签，因此提前堆叠。 */
+@container (max-width: 700px) {
   .row {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .actions {
-    justify-content: flex-start;
+    justify-content: start;
+    justify-items: start;
     border-left: none;
     border-top: 1px solid var(--color-border);
   }
