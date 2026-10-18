@@ -24,9 +24,12 @@ import { Badge } from "../components/ui/Badge";
 import { Notice } from "../components/ui/Notice";
 import { ProjectList } from "../features/projects/ProjectList";
 import { AddProjectDialog } from "../features/projects/AddProjectDialog";
+import { RunSessionFlow } from "../features/aiSessions/RunSessionFlow";
+import { RecentSessionsSection } from "../features/aiSessions/RecentSessionsSection";
 import { TOOL_STATUS_KEY, getStatusTone } from "../features/tools/data";
 import { RESTORE_LEVEL_KEY, RESTORE_LEVEL_TONE, sessionName } from "../features/workspace/meta";
 import { toErrorMessage } from "../services/backend";
+import { copyText } from "../services/clipboard";
 import { formatRelativeTime } from "../utils/format";
 import type { Project } from "../types/domain";
 import styles from "./OverviewPage.module.css";
@@ -48,7 +51,8 @@ function compareRecent(a: Project, b: Project): number {
 /** 默认页面：本地开发工作区概览。 */
 export function OverviewPage() {
   const { navigate, openProject, showLastContextOnStartup } = useApp();
-  const { projects } = useProjects();
+  const { projects, setFavorite, setProjectTool, openDirectory } =
+    useProjects();
   const { tools } = useTools();
   const { t } = useI18n();
   const stats = useTaskStats();
@@ -62,6 +66,16 @@ export function OverviewPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [resumeBusy, setResumeBusy] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [runState, setRunState] = useState<{
+    project: Project;
+    initialToolId: string | null;
+  } | null>(null);
+  const [notice, setNotice] = useState<{
+    tone: "success" | "danger";
+    title: string;
+    message?: string;
+  } | null>(null);
 
   async function handleResume(id: string) {
     setResumeBusy(true);
@@ -72,6 +86,53 @@ export function OverviewPage() {
       setResumeError(toErrorMessage(cause, t("overview.resume.error")));
     } finally {
       setResumeBusy(false);
+    }
+  }
+
+  /** 打开会话 / 运行流程：复用 Projects 页同一套 RunSessionFlow。 */
+  function openRun(project: Project, toolId: string | null) {
+    setActionError(null);
+    setRunState({ project, initialToolId: toolId });
+  }
+
+  async function handleToggleFavorite(project: Project) {
+    setActionError(null);
+    setNotice(null);
+    try {
+      await setFavorite(project.id, !project.isFavorite);
+    } catch (cause) {
+      setActionError(toErrorMessage(cause, t("projects.favoriteFailed")));
+    }
+  }
+
+  async function handleSetTool(project: Project, toolId: string | null) {
+    setActionError(null);
+    setNotice(null);
+    try {
+      await setProjectTool(project.id, toolId);
+    } catch (cause) {
+      setActionError(toErrorMessage(cause, t("projects.setToolFailed")));
+    }
+  }
+
+  async function handleOpenDir(project: Project) {
+    setActionError(null);
+    setNotice(null);
+    try {
+      await openDirectory(project.id);
+    } catch (cause) {
+      setActionError(toErrorMessage(cause, t("health.openFailed")));
+    }
+  }
+
+  async function handleCopyPath(project: Project) {
+    setActionError(null);
+    setNotice(null);
+    const ok = await copyText(project.path);
+    if (ok) {
+      setNotice({ tone: "success", title: t("health.copied") });
+    } else {
+      setActionError(t("health.copyFailed"));
     }
   }
 
@@ -118,6 +179,14 @@ export function OverviewPage() {
               {t("common.gotIt")}
             </Button>
           </div>
+        </Notice>
+      )}
+
+      {actionError && <Notice tone="danger">{actionError}</Notice>}
+
+      {notice && (
+        <Notice tone={notice.tone} title={notice.title}>
+          {notice.message}
         </Notice>
       )}
 
@@ -212,6 +281,8 @@ export function OverviewPage() {
         </Section>
       )}
 
+      <RecentSessionsSection />
+
       <Section
         title={t("overview.recentProjects.title")}
         description={t("overview.recentProjects.description")}
@@ -238,7 +309,18 @@ export function OverviewPage() {
         {recentProjects.length > 0 ? (
           <ProjectList
             projects={recentProjects}
+            showActions
+            showLaunch
+            tools={tools}
             onSelect={(project) => openProject(project.id)}
+            onRename={(project) => openProject(project.id)}
+            onToggleFavorite={handleToggleFavorite}
+            onOpenDir={handleOpenDir}
+            onCopyPath={handleCopyPath}
+            onSetTool={handleSetTool}
+            onRun={(project) =>
+              openRun(project, project.defaultToolId ?? null)
+            }
           />
         ) : (
           <EmptyState
@@ -390,6 +472,25 @@ export function OverviewPage() {
         open={addOpen}
         onClose={() => setAddOpen(false)}
         onCreated={() => navigate("projects")}
+      />
+
+      <RunSessionFlow
+        key={runState?.project.id ?? "none"}
+        open={runState !== null}
+        project={runState?.project ?? null}
+        initialToolId={runState?.initialToolId ?? null}
+        onClose={() => setRunState(null)}
+        onToolChange={(toolId) => {
+          const target = runState?.project;
+          if (!target) {
+            return;
+          }
+          // 立即反馈，同时持久化为项目的当前工具（与 Projects 页一致）。
+          setRunState((current) =>
+            current ? { ...current, initialToolId: toolId } : current,
+          );
+          void handleSetTool(target, toolId);
+        }}
       />
     </div>
   );

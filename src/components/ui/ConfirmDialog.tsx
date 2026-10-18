@@ -11,6 +11,8 @@ interface ConfirmDialogProps {
   cancelLabel?: string;
   tone?: "primary" | "danger";
   busy?: boolean;
+  /** 额外禁用确认按钮（如目标不可用时），与 `busy` 叠加生效。 */
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onClose: () => void;
   children?: ReactNode;
@@ -25,6 +27,7 @@ export function ConfirmDialog({
   cancelLabel = t("common.cancel"),
   tone = "primary",
   busy = false,
+  confirmDisabled = false,
   onConfirm,
   onClose,
   children,
@@ -44,7 +47,7 @@ export function ConfirmDialog({
           <Button
             variant={tone === "danger" ? "danger" : "primary"}
             onClick={onConfirm}
-            disabled={busy}
+            disabled={busy || confirmDisabled}
           >
             {busy ? t("common.processing") : confirmLabel}
           </Button>

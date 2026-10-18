@@ -47,12 +47,14 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   "error.readTools": "Failed to load tools.",
   "error.readTasks": "Failed to load tasks.",
   "error.readWorkspace": "Failed to load sessions.",
+  "error.readSessions": "Failed to load sessions.",
   "error.saveSettings": "Failed to save settings.",
 
   // Navigation & shell
   "nav.overview": "Overview",
   "nav.projects": "Projects",
   "nav.tools": "Tools",
+  "nav.tutorials": "Tutorials",
   "nav.tasks": "Tasks",
   "nav.sessions": "Sessions",
   "nav.settings": "Settings",
@@ -137,6 +139,38 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   "overview.recentProjects.emptyTitle": "No projects yet",
   "overview.recentProjects.emptyDescription":
     "Create a new project folder, or import an existing local folder.",
+  "overview.recentSessions.title": "Recent sessions",
+  "overview.recentSessions.description":
+    "Your most recently used AI tool sessions.",
+  "overview.recentSessions.goProjects": "Browse projects",
+  "overview.recentSessions.emptyTitle": "No sessions yet",
+  "overview.recentSessions.emptyDescription":
+    "Start an AI tool session in a project and recent sessions will appear here.",
+  "overview.recentSessions.lastUsed": "Last used {time}",
+  "overview.recentSessions.open": "Open session",
+  "overview.recentSessions.toolUnavailable": "Tool unavailable",
+  "overview.recentSessions.projectGone": "Project removed",
+  "overview.recentSessions.dialogTitle": "Open session",
+  "overview.recentSessions.dialogDescription":
+    "Open the selected history session directly in its tool.",
+  "overview.recentSessions.fieldSession": "Session",
+  "overview.recentSessions.fieldProject": "Project",
+  "overview.recentSessions.fieldTool": "Tool",
+  "overview.recentSessions.confirm": "Open session",
+  "overview.recentSessions.opened": "Opened session “{name}”",
+  "overview.recentSessions.openFailed": "Failed to open the session.",
+  "overview.recentSessions.reasonProjectGone":
+    "This session's project was removed, so it can't be opened.",
+  "overview.recentSessions.reasonPathMissing":
+    "The project folder is missing or inaccessible, so this session can't be opened.",
+  "overview.recentSessions.reasonNoNativeId":
+    "This session has no native session id, so it can't be opened directly.",
+  "overview.recentSessions.reasonToolUnavailable":
+    "This session's tool is currently unavailable, so it can't be opened.",
+  "overview.recentSessions.reasonUnsupported":
+    "This tool doesn't support opening history sessions directly.",
+  "overview.recentSessions.reasonChecking":
+    "Checking whether this session can be opened…",
   "overview.tasks.title": "Tasks",
   "overview.tasks.description": "Task status at a glance.",
   "overview.tasks.allTasks": "All Tasks",
@@ -232,8 +266,12 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   "addProject.errPath": "Select the folder to import.",
   "addProject.failed": "Failed to add the project.",
 
-  // Project detail drawer
+  // Project detail page
   "projectDetail.title": "Project details",
+  "projectDetail.back": "Back to projects",
+  "projectDetail.openFolder": "Open folder",
+  "projectDetail.notFoundTitle": "Project not found",
+  "projectDetail.notFoundDescription": "This project may have been removed.",
   "projectDetail.dirUnavailableTitle": "Folder unavailable",
   "projectDetail.dirUnavailableBody":
     "The project folder no longer exists and may have been moved or deleted. Recover it on disk, then use Relocate.",
@@ -407,6 +445,7 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   "tools.unsetDefault": "Unset default",
   "tools.setDefault": "Set as default",
   "tools.configure": "Configure",
+  "tools.tutorial": "Guide",
   "tools.remove": "Remove",
   "tools.confirmRemoveTitle": "Remove tool config",
   "tools.confirmRemoveDescription":
@@ -458,6 +497,27 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   "toolConfig.errName": "Enter a tool name.",
   "toolConfig.errConfig": "Provide an executable path or a command name.",
   "toolConfig.failed": "Failed to save the tool configuration.",
+
+  // Tutorial center
+  "tutorials.title": "Tutorials",
+  "tutorials.description":
+    "Official download, installation, initial setup and VibeAcross integration guidance for each AI coding tool.",
+  "tutorials.searchPlaceholder": "Search tools, sections or keywords…",
+  "tutorials.searchLabel": "Search tutorials",
+  "tutorials.resultsLabel": "Tutorial search results",
+  "tutorials.resultCount": "{count} matches",
+  "tutorials.noResultsTitle": "No matching tutorial content",
+  "tutorials.noResultsDescription":
+    "Nothing found for \"{query}\". Try a different keyword.",
+  "tutorials.anchorMissing":
+    "The target section was not found; showing the top of the tutorial.",
+  "tutorials.linkOpenFailed": "Could not open link",
+  "tutorials.noneTitle": "No tutorial for this tool yet",
+  "tutorials.noneDescription":
+    "There is no dedicated tutorial for \"{name}\". Pick another tool from the list to see available tutorials.",
+  "tutorials.browseOther": "Browse tutorials",
+  "tutorials.tocLabel": "Tool tutorial list",
+  "tutorials.sectionsLabel": "Sections",
 
   // Sessions page
   "sessions.title": "Sessions",

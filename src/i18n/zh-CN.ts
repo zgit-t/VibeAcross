@@ -44,12 +44,14 @@ export const zhCN = {
   "error.readTools": "读取工具列表失败。",
   "error.readTasks": "读取任务列表失败。",
   "error.readWorkspace": "读取工作上下文失败。",
+  "error.readSessions": "读取会话列表失败。",
   "error.saveSettings": "保存设置失败。",
 
   // 导航与外壳
   "nav.overview": "概览",
   "nav.projects": "项目",
   "nav.tools": "工具",
+  "nav.tutorials": "教程中心",
   "nav.tasks": "任务",
   "nav.sessions": "会话",
   "nav.settings": "设置",
@@ -133,6 +135,36 @@ export const zhCN = {
   "overview.recentProjects.emptyTitle": "还没有项目",
   "overview.recentProjects.emptyDescription":
     "创建一个新的项目目录，或导入一个已存在的本地目录。",
+  "overview.recentSessions.title": "最近会话",
+  "overview.recentSessions.description": "最近使用的 AI 工具会话。",
+  "overview.recentSessions.goProjects": "浏览项目",
+  "overview.recentSessions.emptyTitle": "还没有会话记录",
+  "overview.recentSessions.emptyDescription":
+    "在项目中启动一次 AI 工具会话后，这里会显示最近的记录。",
+  "overview.recentSessions.lastUsed": "最近使用 {time}",
+  "overview.recentSessions.open": "打开会话",
+  "overview.recentSessions.toolUnavailable": "工具不可用",
+  "overview.recentSessions.projectGone": "项目已移除",
+  "overview.recentSessions.dialogTitle": "打开历史会话",
+  "overview.recentSessions.dialogDescription":
+    "将在对应工具中直接打开你选择的历史会话。",
+  "overview.recentSessions.fieldSession": "会话",
+  "overview.recentSessions.fieldProject": "项目",
+  "overview.recentSessions.fieldTool": "工具",
+  "overview.recentSessions.confirm": "确认打开",
+  "overview.recentSessions.opened": "已打开会话「{name}」",
+  "overview.recentSessions.openFailed": "打开会话失败。",
+  "overview.recentSessions.reasonProjectGone":
+    "该会话所属项目已被移除，无法打开。",
+  "overview.recentSessions.reasonPathMissing":
+    "项目目录不存在或不可访问，无法打开该会话。",
+  "overview.recentSessions.reasonNoNativeId":
+    "该会话没有可用的原生会话标识，无法直接打开。",
+  "overview.recentSessions.reasonToolUnavailable":
+    "该会话对应的工具当前不可用，无法打开。",
+  "overview.recentSessions.reasonUnsupported":
+    "当前工具不支持直接打开历史会话，无法从这里打开。",
+  "overview.recentSessions.reasonChecking": "正在检查该会话是否可打开…",
   "overview.tasks.title": "任务",
   "overview.tasks.description": "任务状态概览。",
   "overview.tasks.allTasks": "全部任务",
@@ -226,8 +258,12 @@ export const zhCN = {
   "addProject.errPath": "请选择要导入的目录。",
   "addProject.failed": "添加项目失败。",
 
-  // 项目详情抽屉
+  // 项目详情页
   "projectDetail.title": "项目详情",
+  "projectDetail.back": "返回项目列表",
+  "projectDetail.openFolder": "打开文件夹",
+  "projectDetail.notFoundTitle": "未找到项目",
+  "projectDetail.notFoundDescription": "该项目可能已被移除。",
   "projectDetail.dirUnavailableTitle": "目录不可用",
   "projectDetail.dirUnavailableBody":
     "该项目目录当前不存在，可能已被移动或删除。请在磁盘上找回后使用「重新定位」。",
@@ -401,6 +437,7 @@ export const zhCN = {
   "tools.unsetDefault": "取消默认",
   "tools.setDefault": "设为默认",
   "tools.configure": "配置",
+  "tools.tutorial": "教程",
   "tools.remove": "移除",
   "tools.confirmRemoveTitle": "移除工具配置",
   "tools.confirmRemoveDescription":
@@ -452,6 +489,26 @@ export const zhCN = {
   "toolConfig.errName": "请填写工具名称。",
   "toolConfig.errConfig": "请提供可执行文件路径或命令名称。",
   "toolConfig.failed": "保存工具配置失败。",
+
+  // 教程中心
+  "tutorials.title": "教程中心",
+  "tutorials.description":
+    "查看各 AI 编程工具的官方下载、安装、初始配置与在 VibeAcross 中的接入指引。",
+  "tutorials.searchPlaceholder": "搜索工具、章节或关键词…",
+  "tutorials.searchLabel": "搜索教程",
+  "tutorials.resultsLabel": "教程搜索结果",
+  "tutorials.resultCount": "{count} 条匹配",
+  "tutorials.noResultsTitle": "没有匹配的教程内容",
+  "tutorials.noResultsDescription":
+    "未找到与「{query}」相关的内容，请尝试其它关键词。",
+  "tutorials.anchorMissing": "未找到目标章节，已回到教程顶部。",
+  "tutorials.linkOpenFailed": "打开链接失败",
+  "tutorials.noneTitle": "暂无该工具的教程",
+  "tutorials.noneDescription":
+    "「{name}」目前没有专属教程。请从左侧选择其它工具查看可用教程。",
+  "tutorials.browseOther": "查看可用教程",
+  "tutorials.tocLabel": "工具教程目录",
+  "tutorials.sectionsLabel": "章节",
 
   // Sessions 页面
   "sessions.title": "会话",

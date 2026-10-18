@@ -1,3 +1,17 @@
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.status {
+  margin: 0;
+  padding: var(--space-6);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  text-align: center;
+}
+
 .section {
   display: flex;
   flex-direction: column;

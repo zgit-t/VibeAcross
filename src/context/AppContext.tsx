@@ -57,7 +57,7 @@ setActiveLocale(readStoredLanguage());
 interface AppContextValue {
   activeView: ViewId;
   navigate: (view: ViewId) => void;
-  /** 打开 Projects 页面并定位到指定项目的详情抽屉（深链）。 */
+  /** 打开 Projects 页面并定位到指定项目的详情弹窗（深链）。 */
   openProject: (projectId: string) => void;
   /** 待处理的项目深链 id；由 Projects 页面消费后清除。 */
   pendingProjectId: string | null;
@@ -72,6 +72,16 @@ interface AppContextValue {
   /** 待处理的工作上下文深链 id；由 Sessions 页面消费后清除。 */
   pendingSessionId: string | null;
   clearPendingSession: () => void;
+
+  /** 打开教程中心并定位到指定工具的教程；`anchor` 可定位到具体章节。 */
+  openTutorial: (toolId: string, name: string, anchor?: string | null) => void;
+  /** 待处理的教程深链；由教程中心消费后清除。 */
+  pendingTutorial: {
+    toolId: string;
+    name: string;
+    anchor: string | null;
+  } | null;
+  clearPendingTutorial: () => void;
 
   themeMode: ThemeMode;
   resolvedTheme: ResolvedTheme;
@@ -114,6 +124,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
   const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
+  const [pendingTutorial, setPendingTutorial] = useState<{
+    toolId: string;
+    name: string;
+    anchor: string | null;
+  } | null>(null);
   const [themeMode, setThemeModeState] = useState<ThemeMode>(readStoredThemeMode);
   const [systemTheme, setSystemTheme] = useState<ResolvedTheme>(() =>
     resolveTheme("system"),
@@ -210,12 +225,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setPendingProjectId(null);
     setPendingTaskId(null);
     setPendingSessionId(null);
+    setPendingTutorial(null);
     setActiveView(view);
   }, []);
 
   const openProject = useCallback((projectId: string) => {
     setPendingTaskId(null);
     setPendingSessionId(null);
+    setPendingTutorial(null);
     setPendingProjectId(projectId);
     setActiveView("projects");
   }, []);
@@ -225,6 +242,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const openTask = useCallback((taskId: string) => {
     setPendingProjectId(null);
     setPendingSessionId(null);
+    setPendingTutorial(null);
     setPendingTaskId(taskId);
     setActiveView("tasks");
   }, []);
@@ -234,11 +252,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const openSession = useCallback((sessionId: string) => {
     setPendingProjectId(null);
     setPendingTaskId(null);
+    setPendingTutorial(null);
     setPendingSessionId(sessionId);
     setActiveView("sessions");
   }, []);
 
   const clearPendingSession = useCallback(() => setPendingSessionId(null), []);
+
+  const openTutorial = useCallback(
+    (toolId: string, name: string, anchor?: string | null) => {
+      setPendingProjectId(null);
+      setPendingTaskId(null);
+      setPendingSessionId(null);
+      setPendingTutorial({ toolId, name, anchor: anchor ?? null });
+      setActiveView("tutorials");
+    },
+    [],
+  );
+
+  const clearPendingTutorial = useCallback(
+    () => setPendingTutorial(null),
+    [],
+  );
 
   /** 将设置写入 SQLite；失败时保留现有设置并提示。 */
   const persistSettings = useCallback(async (patch: Partial<AppSettings>) => {
@@ -324,6 +359,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       openSession,
       pendingSessionId,
       clearPendingSession,
+      openTutorial,
+      pendingTutorial,
+      clearPendingTutorial,
       themeMode,
       resolvedTheme,
       setThemeMode,
@@ -359,6 +397,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       openSession,
       pendingSessionId,
       clearPendingSession,
+      openTutorial,
+      pendingTutorial,
+      clearPendingTutorial,
       themeMode,
       resolvedTheme,
       setThemeMode,

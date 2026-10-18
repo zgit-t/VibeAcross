@@ -57,6 +57,15 @@
   text-align: center;
 }
 
+/* 错误提示：左文案、右重试入口；窄窗口下换行不重叠。 */
+.errorBody {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
 .list {
   display: flex;
   flex-direction: column;

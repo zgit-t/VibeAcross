@@ -75,6 +75,7 @@ export function getStatusTone(status: ToolStatus): ToolBadgeTone {
 
 /** 工具行内可执行的操作。 */
 export type ToolRowAction =
+  | "tutorial"
   | "manualConfig"
   | "detect"
   | "redetect"
@@ -88,6 +89,7 @@ export type ToolRowAction =
  * 根据工具的**来源**（`source`）与**当前状态**（`status`）推导行内可用操作，
  * 只展示此刻真正有意义的操作，避免误导性的重复按钮：
  *
+ * - 任何来源都提供 `教程`（有专属教程则打开，否则展示无教程状态）。
  * - 内置占位（`builtin`，尚未配置）：`手动配置` + `检测`。
  * - 自动检测发现（`auto`）：`重新检测`（重新扫描本机安装）。
  * - 手动添加且路径有效（`manual` + `detected`）：**不提供重复检测**，
@@ -101,10 +103,10 @@ export function getToolRowActions(
   tool: Pick<ToolEntry, "source" | "status" | "installed" | "isDefault">,
 ): ToolRowAction[] {
   if (tool.source === "builtin") {
-    return ["manualConfig", "detect"];
+    return ["tutorial", "manualConfig", "detect"];
   }
 
-  const actions: ToolRowAction[] = [];
+  const actions: ToolRowAction[] = ["tutorial"];
   if (tool.installed) {
     actions.push(tool.isDefault ? "unsetDefault" : "setDefault");
   }

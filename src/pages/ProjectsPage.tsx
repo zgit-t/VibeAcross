@@ -14,7 +14,7 @@ import { SegmentedControl } from "../components/ui/SegmentedControl";
 import { Switch } from "../components/ui/Switch";
 import { ProjectList } from "../features/projects/ProjectList";
 import { AddProjectDialog } from "../features/projects/AddProjectDialog";
-import { ProjectDetailDrawer } from "../features/projects/ProjectDetailDrawer";
+import { ProjectDetailDialog } from "../features/projects/ProjectDetailDialog";
 import { RunSessionFlow } from "../features/aiSessions/RunSessionFlow";
 import { filterProjects } from "../features/projects/filter";
 import { toErrorMessage } from "../services/backend";
@@ -65,22 +65,16 @@ export function ProjectsPage() {
     message?: string;
   } | null>(null);
 
-  const selected = selectedId
-    ? projects.find((project) => project.id === selectedId) ?? null
-    : null;
-
-  // 消费来自其它页面（如 Overview）的项目深链，打开对应详情。
+  // 消费来自其它页面（如 Overview）的项目深链，打开对应详情弹窗。
   useEffect(() => {
     if (!pendingProjectId || loading) {
       return;
     }
+    setSelectedId(pendingProjectId);
+    setActionError(null);
     const target = projects.find((project) => project.id === pendingProjectId);
     if (target) {
-      setSelectedId(target.id);
-      setActionError(null);
       void touchOpened(target.id).catch(() => undefined);
-    } else {
-      setActionError(t("projects.notFound"));
     }
     clearPendingProject();
   }, [
@@ -89,7 +83,6 @@ export function ProjectsPage() {
     projects,
     touchOpened,
     clearPendingProject,
-    t,
   ]);
 
   const filtered = useMemo(
@@ -296,11 +289,13 @@ export function ProjectsPage() {
         onCreated={openDetail}
       />
 
-      <ProjectDetailDrawer
-        project={selected}
-        open={selected !== null}
-        onClose={() => setSelectedId(null)}
-      />
+      {selectedId && (
+        <ProjectDetailDialog
+          key={selectedId}
+          projectId={selectedId}
+          onClose={() => setSelectedId(null)}
+        />
+      )}
 
       <RunSessionFlow
         key={runProject?.id ?? "none"}

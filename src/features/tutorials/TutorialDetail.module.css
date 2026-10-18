@@ -1,0 +1,217 @@
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.vendor {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-size-xl);
+}
+
+.summary {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-content-bg);
+  scroll-margin-top: var(--space-4);
+}
+
+/* 临时高亮：命中锚点时以左侧强调条与底色提示定位结果。 */
+.section[data-highlighted="true"],
+.faqItem[data-highlighted="true"] {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+  animation: anchorPulse var(--transition-base);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: var(--font-size-lg);
+}
+
+.paragraph {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.steps,
+.bullets {
+  margin: 0;
+  padding-left: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+}
+
+.steps {
+  list-style: decimal;
+}
+
+.bullets {
+  list-style: disc;
+}
+
+.steps li,
+.bullets li {
+  overflow-wrap: anywhere;
+}
+
+.codeFigure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.codeLabel {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.code {
+  margin: 0;
+  padding: var(--space-3);
+  background: var(--color-panel-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono, ui-monospace, "Cascadia Mono", Consolas, monospace);
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.note {
+  display: block;
+}
+
+.links {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.linkItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.linkButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: flex-start;
+  max-width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-accent);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.linkButton:hover {
+  background: var(--color-hover);
+  border-color: var(--color-border-strong);
+}
+
+.linkLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.linkHost {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono, ui-monospace, "Cascadia Mono", Consolas, monospace);
+}
+
+.linkNote {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  overflow-wrap: anywhere;
+}
+
+.faqList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
+}
+
+.faqItem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-panel);
+  scroll-margin-top: var(--space-4);
+}
+
+.faqQuestion {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.faqAnswer {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+@keyframes anchorPulse {
+  from {
+    background: var(--color-accent-soft);
+  }
+  to {
+    background: var(--color-content-bg);
+  }
+}

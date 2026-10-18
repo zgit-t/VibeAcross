@@ -26,6 +26,7 @@ import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { EmptyState } from "../../components/ui/EmptyState";
+import { LoadingState } from "../../components/ui/LoadingState";
 import { Modal } from "../../components/ui/Modal";
 import { Notice } from "../../components/ui/Notice";
 import { RadioGroup } from "../../components/ui/RadioGroup";
@@ -72,6 +73,13 @@ interface DialogNotice {
   title: string;
 }
 
+/** 一次历史会话读取的完整结果（能力 + 列表 + 来源状态）。 */
+interface HistorySnapshot {
+  capabilities: NativeSessionCapabilities;
+  sessions: AiSession[];
+  state: HistoryQueryState | null;
+}
+
 /**
  * 运行会话弹窗：在当前项目 + 所选工具下，列出历史会话、创建新会话或恢复指定会话。
  *
@@ -106,6 +114,7 @@ export function RunSessionDialog({
   );
   const [opening, setOpening] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<DialogNotice | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -122,6 +131,9 @@ export function RunSessionDialog({
   const [confirmDelete, setConfirmDelete] = useState<AiSession | null>(null);
   const [deleteScope, setDeleteScope] = useState<DeleteScope>("local");
   const requestRef = useRef(0);
+  // 同一「项目 + 工具 + 刷新批次」的并发读取去重：命中在途请求则复用其 Promise，
+  // 避免因重复渲染 / StrictMode 二次挂载等触发重复查询。
+  const inflightRef = useRef(new Map<string, Promise<HistorySnapshot>>());
 
   const selectedTool = useMemo(
     () => tools.find((tool) => tool.id === toolId) ?? null,
@@ -142,6 +154,7 @@ export function RunSessionDialog({
     setHistoryState(null);
     setOpening(false);
     setLoading(false);
+    setLoaded(false);
     setError(null);
     setNotice(null);
     setCreating(false);
@@ -177,6 +190,7 @@ export function RunSessionDialog({
   }, [open, tools, initialToolId, toolId]);
 
   // 加载能力与历史会话；带请求令牌，丢弃过期结果（切换工具 / 关闭后不覆盖新状态）。
+  // 同一查询进行中时复用同一 Promise，避免重复触发（例如重复渲染 / StrictMode）。
   useEffect(() => {
     if (!open || !projectId || !toolId || !pathExists) {
       setLoading(false);
@@ -196,14 +210,11 @@ export function RunSessionDialog({
     setNotice(null);
     setEditingId(null);
 
-    void (async () => {
-      try {
+    const key = `${projectId}|${toolId}|${tool.toolId}|${reloadKey}`;
+    let request = inflightRef.current.get(key);
+    if (!request) {
+      request = (async (): Promise<HistorySnapshot> => {
         const caps = await sessionCapabilities(tool.toolId);
-        if (cancelled || requestRef.current !== token) {
-          return;
-        }
-        setCapabilities(caps);
-
         let list: AiSession[];
         let state: HistoryQueryState | null = null;
         if (caps.list === "supported") {
@@ -213,23 +224,40 @@ export function RunSessionDialog({
         } else {
           list = await listSessions({ projectId, toolId });
         }
+        return { capabilities: caps, sessions: list, state };
+      })();
+      inflightRef.current.set(key, request);
+      const cleanup = () => {
+        if (inflightRef.current.get(key) === request) {
+          inflightRef.current.delete(key);
+        }
+      };
+      void request.then(cleanup, cleanup);
+    }
+
+    void request
+      .then((snapshot) => {
         if (cancelled || requestRef.current !== token) {
           return;
         }
-        setSessions(list);
-        setHistoryState(state);
+        setCapabilities(snapshot.capabilities);
+        setSessions(snapshot.sessions);
+        setHistoryState(snapshot.state);
         setMarkedMissing(new Set());
-      } catch (cause) {
+        setLoaded(true);
+      })
+      .catch((cause) => {
         if (cancelled || requestRef.current !== token) {
           return;
         }
         setError(toErrorMessage(cause, t("aiSession.loadFailed")));
-      } finally {
+        setLoaded(true);
+      })
+      .finally(() => {
         if (!cancelled && requestRef.current === token) {
           setLoading(false);
         }
-      }
-    })();
+      });
 
     return () => {
       cancelled = true;
@@ -483,6 +511,12 @@ export function RunSessionDialog({
   const launchSupport = selectedTool?.launch.support ?? "unavailable";
   const canOpenTool = launchSupport === "supported";
 
+  // 是否会真正发起历史会话读取：用于在首帧就显示加载态，避免空状态一闪而过。
+  const expectsHistoryLoad =
+    open && projectId != null && pathExists && tools.length > 0;
+  // 加载动画条件：正在加载，或尚未完成首次读取（且确实会读取、且未报错）。
+  const showLoading = loading || (!loaded && expectsHistoryLoad && !error);
+
   const toolOptions = useMemo(
     () => tools.map((tool) => ({ value: tool.id, label: tool.name })),
     [tools],
@@ -512,7 +546,7 @@ export function RunSessionDialog({
         {project && (
           <div className={styles.body}>
             {toolsLoading && tools.length === 0 ? (
-              <p className={styles.state}>{t("aiSession.loading")}</p>
+              <LoadingState label={t("tools.loading")} />
             ) : tools.length === 0 ? (
               <Notice tone="warning" title={t("aiSession.noToolsTitle")}>
                 {t("aiSession.noTools")}
@@ -555,7 +589,21 @@ export function RunSessionDialog({
                 {notice && (
                   <Notice tone={notice.tone}>{notice.title}</Notice>
                 )}
-                {error && <Notice tone="danger">{error}</Notice>}
+                {error && (
+                  <Notice tone="danger">
+                    <div className={styles.errorBody}>
+                      <span>{error}</span>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setReloadKey((key) => key + 1)}
+                        disabled={anyBusy || showLoading}
+                      >
+                        {t("aiSession.retry")}
+                      </Button>
+                    </div>
+                  </Notice>
+                )}
 
                 <div className={styles.toolbar}>
                   <div className={styles.toolbarGroup}>
@@ -594,7 +642,7 @@ export function RunSessionDialog({
                     size="sm"
                     icon={<RefreshCw size={14} aria-hidden="true" />}
                     onClick={() => setReloadKey((key) => key + 1)}
-                    disabled={anyBusy || loading}
+                    disabled={anyBusy || showLoading}
                   >
                     {t("aiSession.refresh")}
                   </Button>
@@ -646,8 +694,8 @@ export function RunSessionDialog({
                   </div>
                 )}
 
-                {loading ? (
-                  <p className={styles.state}>{t("aiSession.loading")}</p>
+                {showLoading ? (
+                  <LoadingState label={t("aiSession.loading")} />
                 ) : historyState && historyState !== "available" ? (
                   <Notice
                     tone={HISTORY_STATE_TONE[historyState]}

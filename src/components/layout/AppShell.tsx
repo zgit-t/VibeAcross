@@ -5,6 +5,7 @@ import { Sidebar } from "./Sidebar";
 import { OverviewPage } from "../../pages/OverviewPage";
 import { ProjectsPage } from "../../pages/ProjectsPage";
 import { ToolsPage } from "../../pages/ToolsPage";
+import { TutorialsPage } from "../../pages/TutorialsPage";
 import { TasksPage } from "../../pages/TasksPage";
 import { SessionsPage } from "../../pages/SessionsPage";
 import { SettingsPage } from "../../pages/SettingsPage";
@@ -19,6 +20,8 @@ function renderView(view: ViewId) {
       return <ProjectsPage />;
     case "tools":
       return <ToolsPage />;
+    case "tutorials":
+      return <TutorialsPage />;
     case "tasks":
       return <TasksPage />;
     case "sessions":

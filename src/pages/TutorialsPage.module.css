@@ -1,0 +1,287 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  container-type: inline-size;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.count {
+  margin-left: auto;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+
+/* 浏览视图：左目录 + 右正文。 */
+.layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+/**
+ * 左侧栏：随正文滚动固定在可视区内（相对 AppShell 的 `.main` 滚动区）。
+ *
+ * 这里只负责「两个卡片各自独立滚动」的**高度预算**，本身不再是滚动区：
+ * `--side-nav-height` 从视口高度中扣除内容区上下留白，两个卡片按比例分配后
+ * 各自内部滚动，因此不会合并成一个统一滚动区域，也不会把下方章节卡片挤出视口。
+ */
+.sideNav {
+  --side-nav-height: calc(100vh - var(--space-7) - var(--space-8));
+  --side-nav-gap: var(--space-3);
+  position: sticky;
+  top: var(--space-7);
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: var(--side-nav-gap);
+  min-width: 0;
+  min-height: 0;
+  max-height: var(--side-nav-height);
+}
+
+/* 两个卡片的公共外观（位置、宽度、边框、圆角、底色与原先一致）。 */
+.toolCard,
+.sectionCard {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  flex: 0 1 auto;
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+/* 高度按可用区域比例分配（工具 45% / 章节 55%），非固定像素。 */
+.toolCard {
+  max-height: calc((var(--side-nav-height) - var(--side-nav-gap)) * 0.45);
+}
+
+.sectionCard {
+  max-height: calc((var(--side-nav-height) - var(--side-nav-gap)) * 0.55);
+}
+
+/* 卡片内部列表：唯一可滚动区域，条目超出时只在此处滚动。 */
+.toolList,
+.sectionList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  padding: var(--space-2);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* 章节卡片标题：始终可见，不随列表滚动。 */
+.sectionCardHeader {
+  flex: 0 0 auto;
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolNavItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.toolNavItem:hover {
+  background: var(--color-hover);
+}
+
+.toolNavActive {
+  background: var(--color-selected);
+  color: var(--color-selected-text);
+}
+
+.toolNavName {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolNavVendor {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 章节条目：点击定位到对应章节，当前章节高亮。 */
+.sectionNavItem {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  background: none;
+  border: 1px solid transparent;
+  border-left: 2px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.sectionNavItem:hover {
+  background: var(--color-hover);
+}
+
+.sectionNavActive {
+  background: var(--color-selected);
+  color: var(--color-selected-text);
+  border-left-color: var(--color-accent);
+  font-weight: 600;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* 搜索结果 */
+.results {
+  min-width: 0;
+}
+
+.resultList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.resultItem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-content-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.resultItem:hover {
+  background: var(--color-hover);
+  border-color: var(--color-border-strong);
+}
+
+.resultMeta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.resultTool {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.resultSection {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resultSnippet {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+/* 窄容器：目录改为可换行的横向标签，正文占满整行。 */
+@container (max-width: 640px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* 单列布局下两个卡片不再固定、不内部滚动，避免遮挡正文或产生嵌套滚动条。 */
+  .sideNav {
+    position: static;
+    max-height: none;
+    gap: var(--space-3);
+  }
+
+  .toolCard,
+  .sectionCard {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .toolList,
+  .sectionList {
+    flex-direction: row;
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .toolNavItem {
+    align-items: center;
+  }
+
+  .sectionNavItem {
+    width: auto;
+    border-left-width: 1px;
+  }
+
+  .sectionNavActive {
+    border-left-color: transparent;
+  }
+}
+
+/* 与 AppShell 的内容内边距断点保持一致，使固定偏移与可用高度同步调整。 */
+@media (max-width: 720px) {
+  .sideNav {
+    top: var(--space-5);
+    --side-nav-height: calc(100vh - var(--space-5) - var(--space-6));
+  }
+}

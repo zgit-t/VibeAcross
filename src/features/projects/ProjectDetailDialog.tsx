@@ -17,7 +17,8 @@ import { useI18n } from "../../i18n";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
-import { Drawer } from "../../components/ui/Drawer";
+import { EmptyState } from "../../components/ui/EmptyState";
+import { Modal } from "../../components/ui/Modal";
 import { Notice } from "../../components/ui/Notice";
 import { pickDirectory } from "../../services/dialog";
 import { copyText } from "../../services/clipboard";
@@ -34,26 +35,32 @@ import { formatDateTime } from "../../utils/format";
 import { ProjectTasksSection } from "./ProjectTasksSection";
 import { ProjectSessionSection } from "../aiSessions/ProjectSessionSection";
 import type {
-  Project,
   ProjectHealth,
   ProjectPathStatus,
   ProjectToolHealth,
 } from "../../types/domain";
-import styles from "./ProjectDetailDrawer.module.css";
+import styles from "./ProjectDetailDialog.module.css";
 
-interface ProjectDetailDrawerProps {
-  project: Project | null;
-  open: boolean;
+interface ProjectDetailDialogProps {
+  projectId: string;
   onClose: () => void;
 }
 
-/** 项目详情抽屉：重命名、编辑备注、收藏、重新定位与移除。 */
-export function ProjectDetailDrawer({
-  project,
-  open,
+/**
+ * 项目详情弹窗：重命名、编辑备注、收藏、重新定位、打开文件夹与移除。
+ *
+ * 以应用窗口居中的模态呈现，背后的项目列表保持可见与原有状态。所有数据与动作
+ * 复用 `ProjectsContext` / `ToolsContext` 既有实现：打开文件夹走 `openDirectory`，
+ * 运行工具与会话仍由 `ProjectSessionSection` 负责。关闭仅回到项目列表，
+ * 不触发任何工具启动或会话创建。
+ */
+export function ProjectDetailDialog({
+  projectId,
   onClose,
-}: ProjectDetailDrawerProps) {
+}: ProjectDetailDialogProps) {
   const {
+    projects,
+    loading,
     renameProject,
     updateDescription,
     setFavorite,
@@ -65,6 +72,8 @@ export function ProjectDetailDrawer({
   const { tools, refresh: refreshTools } = useTools();
   const { navigate } = useApp();
   const { t } = useI18n();
+
+  const project = projects.find((item) => item.id === projectId) ?? null;
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -82,12 +91,9 @@ export function ProjectDetailDrawer({
     health?.pathStatus ?? (project?.pathExists ? "ok" : "missing");
   const toolHealth: ProjectToolHealth = health?.toolStatus ?? "notConfigured";
 
-  // 仅在抽屉「打开某个项目」时载入草稿，避免列表刷新覆盖用户正在编辑的内容。
+  // 仅在弹窗展示某个项目时载入草稿，避免列表刷新覆盖用户正在编辑的内容。
   useEffect(() => {
-    if (!open || !project) {
-      if (!open) {
-        syncedIdRef.current = null;
-      }
+    if (!project) {
       return;
     }
     if (syncedIdRef.current === project.id) {
@@ -101,15 +107,15 @@ export function ProjectDetailDrawer({
     setHealth(null);
     setCopied(false);
     setPendingPath(null);
-    // 打开项目时按需做一次健康检查（只读）。
+    // 打开弹窗时按需做一次健康检查（只读）。
     void runHealth(project.id, false);
-  }, [open, project]);
+  }, [project]);
 
-  async function runHealth(projectId: string, revalidate: boolean) {
+  async function runHealth(targetId: string, revalidate: boolean) {
     setChecking(true);
     setError(null);
     try {
-      const result = await checkHealth(projectId, revalidate);
+      const result = await checkHealth(targetId, revalidate);
       setHealth(result);
       if (revalidate) {
         // 重新校验了默认工具路径，刷新工具状态以保持界面一致。
@@ -187,10 +193,11 @@ export function ProjectDetailDrawer({
       return;
     }
     const target = pendingPath;
+    const targetId = project.id;
     setPendingPath(null);
     void run(async () => {
-      await relocate(project.id, target);
-      await runHealth(project.id, false);
+      await relocate(targetId, target);
+      await runHealth(targetId, false);
     });
   }
 
@@ -230,23 +237,51 @@ export function ProjectDetailDrawer({
     });
   }
 
+  const pathHealthy = isPathHealthy(pathStatus);
+
   return (
     <>
-      <Drawer
-        open={open}
+      <Modal
+        open
         title={project?.name ?? t("projectDetail.title")}
-        subtitle={project?.path}
+        description={project?.path}
+        size="lg"
         onClose={onClose}
         footer={
-          <Button variant="secondary" onClick={onClose}>
-            {t("common.close")}
-          </Button>
+          <>
+            {project && (
+              <Button
+                variant="secondary"
+                icon={<FolderOpen size={15} aria-hidden="true" />}
+                onClick={handleOpenDir}
+                disabled={!pathHealthy}
+              >
+                {t("projectDetail.openFolder")}
+              </Button>
+            )}
+            <Button variant="secondary" onClick={onClose}>
+              {t("common.close")}
+            </Button>
+          </>
         }
       >
-        {project && (
-          <>
-            {!isPathHealthy(pathStatus) && (
-              <Notice tone="warning" title={t("projectDetail.dirUnavailableTitle")}>
+        {!project ? (
+          loading ? (
+            <p className={styles.status}>{t("projects.loading")}</p>
+          ) : (
+            <EmptyState
+              icon={FolderSearch}
+              title={t("projectDetail.notFoundTitle")}
+              description={t("projectDetail.notFoundDescription")}
+            />
+          )
+        ) : (
+          <div className={styles.content}>
+            {!pathHealthy && (
+              <Notice
+                tone="warning"
+                title={t("projectDetail.dirUnavailableTitle")}
+              >
                 {t("projectDetail.dirUnavailableBody")}
               </Notice>
             )}
@@ -286,7 +321,7 @@ export function ProjectDetailDrawer({
                 </div>
               </div>
 
-              {!isPathHealthy(pathStatus) && (
+              {!pathHealthy && (
                 <p className={styles.hint}>{t("health.pathHint")}</p>
               )}
 
@@ -353,15 +388,6 @@ export function ProjectDetailDrawer({
                 <Button
                   variant="secondary"
                   size="sm"
-                  icon={<FolderOpen size={14} aria-hidden="true" />}
-                  onClick={handleOpenDir}
-                  disabled={!isPathHealthy(pathStatus)}
-                >
-                  {t("health.openDir")}
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
                   icon={
                     copied ? (
                       <Check size={14} aria-hidden="true" />
@@ -386,7 +412,9 @@ export function ProjectDetailDrawer({
             </section>
 
             <section className={styles.section}>
-              <span className={styles.label}>{t("projectDetail.favoriteLabel")}</span>
+              <span className={styles.label}>
+                {t("projectDetail.favoriteLabel")}
+              </span>
               <div className={styles.inline}>
                 <Button
                   variant={project.isFavorite ? "primary" : "secondary"}
@@ -411,7 +439,7 @@ export function ProjectDetailDrawer({
             <ProjectSessionSection
               project={project}
               tools={tools}
-              pathHealthy={isPathHealthy(pathStatus)}
+              pathHealthy={pathHealthy}
             />
 
             <ProjectTasksSection
@@ -438,8 +466,12 @@ export function ProjectDetailDrawer({
             </section>
 
             <section className={styles.danger}>
-              <span className={styles.label}>{t("projectDetail.dangerLabel")}</span>
-              <p className={styles.dangerHint}>{t("projectDetail.dangerHint")}</p>
+              <span className={styles.label}>
+                {t("projectDetail.dangerLabel")}
+              </span>
+              <p className={styles.dangerHint}>
+                {t("projectDetail.dangerHint")}
+              </p>
               <Button
                 variant="danger"
                 size="sm"
@@ -450,41 +482,43 @@ export function ProjectDetailDrawer({
                 {t("projectDetail.removeProject")}
               </Button>
             </section>
-          </>
+          </div>
         )}
-      </Drawer>
+      </Modal>
 
-      <ConfirmDialog
-        open={confirmRemove}
-        title={t("projectDetail.confirmRemoveTitle")}
-        description={
-          project
-            ? t("projectDetail.confirmRemoveDescription", { name: project.name })
-            : undefined
-        }
-        confirmLabel={t("common.remove")}
-        tone="danger"
-        busy={busy}
-        onConfirm={handleRemove}
-        onClose={() => setConfirmRemove(false)}
-      />
+      {project && (
+        <>
+          <ConfirmDialog
+            open={confirmRemove}
+            title={t("projectDetail.confirmRemoveTitle")}
+            description={t("projectDetail.confirmRemoveDescription", {
+              name: project.name,
+            })}
+            confirmLabel={t("common.remove")}
+            tone="danger"
+            busy={busy}
+            onConfirm={handleRemove}
+            onClose={() => setConfirmRemove(false)}
+          />
 
-      <ConfirmDialog
-        open={pendingPath !== null}
-        title={t("health.relocateConfirmTitle")}
-        description={
-          pendingPath
-            ? t("health.relocateConfirmDescription", {
-                name: project?.name ?? "",
-                path: pendingPath,
-              })
-            : undefined
-        }
-        confirmLabel={t("health.relocateConfirmAction")}
-        busy={busy}
-        onConfirm={confirmRelocate}
-        onClose={() => setPendingPath(null)}
-      />
+          <ConfirmDialog
+            open={pendingPath !== null}
+            title={t("health.relocateConfirmTitle")}
+            description={
+              pendingPath
+                ? t("health.relocateConfirmDescription", {
+                    name: project.name,
+                    path: pendingPath,
+                  })
+                : undefined
+            }
+            confirmLabel={t("health.relocateConfirmAction")}
+            busy={busy}
+            onConfirm={confirmRelocate}
+            onClose={() => setPendingPath(null)}
+          />
+        </>
+      )}
     </>
   );
 }

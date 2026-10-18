@@ -52,13 +52,14 @@
    多少，分隔线位置与整体分栏结构在所有卡片上完全一致。
    两栏高度对齐（align-items: stretch），分隔线随卡片高度延伸；
    overflow: hidden 让分隔线止于圆角内部，不穿出卡片边缘。
-   右栏最小宽度需容纳英文按钮两行排布：已检测工具在英文下最多 4 个按钮
-   （Set as default / Configure / Detect again / Remove），两行所需内容宽度约
-   238px，加上左右各 16px 内边距后约 270px，故将下限提高到 296px，保证中英文
-   及正常 / 较窄窗口下操作区都稳定维持两行，不因文本变长而多出一行。 */
+   右栏宽度需容纳操作区「三个英文按钮一行」的最宽情形：
+   已检测工具 5 个按钮按三列排布，取每列最宽内容（Set as default 所在列最宽）
+   后三列内容合计约 361px，加上操作区左右各 16px 内边距约 393px，
+   故下限取 424px（留出余量），保证中英文按钮都不会被压缩、也不会让
+   英文界面下的两行排布意外变成三行。 */
 .row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(296px, 30%, 360px);
+  grid-template-columns: minmax(0, 1fr) clamp(424px, 38%, 520px);
   align-items: stretch;
   background: var(--color-content-bg);
   border: 1px solid var(--color-border);
@@ -163,18 +164,19 @@
   cursor: help;
 }
 
-/* 右栏：全部操作按钮集中于此，右对齐。
-   使用「固定两列 Grid」而非自动换行，从结构上保证操作区最多两行，
-   与工具是否已检测、按钮数量无关：
-   - 每个按钮按 DOM 顺序从左上开始填充两列（第 1、2 个在第一行，
-     第 3、4 个在第二行），因此英文下 Detect again 与 Remove 始终并排，
-     不会因为文本变长被挤成第三行；
-   - 列宽取该列按钮的最大内容宽度（minmax(0, max-content)），按钮保持
-     固有宽度、不压缩文字，两列一起在右栏内右对齐；
-   - 已检测与未检测工具共用同一套规则，操作区布局完全一致。 */
+/* 右栏：全部操作按钮集中于此，使用「固定三列 Grid」并整体右对齐。
+   固定三列（而非 flex 自动换行）从结构上保证操作区行数稳定、与按钮数量无关：
+   - 每个按钮按 DOM 顺序从左上开始逐行填充三列：
+     已检测工具 5 个按钮 → 第一行 3 个、第二行 2 个（英文下也是两行）；
+     未检测工具 3 个按钮 → 单行 3 个；
+     其余 4 个按钮 → 第一行 3 个、第二行 1 个。
+   - 列宽取该列按钮的最大内容宽度（minmax(0, max-content)），两行共用同一套
+     列宽，因此两行的列宽、间距与对齐完全一致；按钮保持固有宽度，
+     不压缩文字、不截断，也不因英文标签更长而多出一行。
+   - 已检测与未检测工具共用同一套规则，操作区宽度与分栏结构完全一致。 */
 .actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, max-content));
+  grid-template-columns: repeat(3, minmax(0, max-content));
   align-content: center;
   align-items: center;
   justify-content: end;
@@ -184,11 +186,11 @@
   border-left: 1px solid var(--color-border);
 }
 
-/* 窄容器：两栏无法再保持合理最小宽度时，所有卡片统一切换为上下布局，
+/* 窄容器：左右两栏无法再保持合理最小宽度时，所有卡片统一切换为上下布局，
    竖向分隔线改为信息栏与操作栏之间的横向分隔线。
-   断点 = 左栏最小宽度(400px) + 右栏最小宽度(296px)，与卡片两栏的最窄需求
-   对齐；低于该宽度时信息栏会被压缩到难以完整显示名称与标签，因此提前堆叠。 */
-@container (max-width: 700px) {
+   断点 = 左栏最小宽度(约 432px) + 右栏最小宽度(424px)，与卡片两栏的最窄需求
+   对齐；低于该宽度时信息栏会被压缩到难以完整显示名称与状态标签，因此提前堆叠。 */
+@container (max-width: 880px) {
   .row {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -198,6 +200,22 @@
     justify-items: start;
     border-left: none;
     border-top: 1px solid var(--color-border);
+  }
+}
+
+/* 更窄的容器：操作区三列放不下时按明确断点减少列数，
+   保证英文按钮永远不溢出卡片、页面不产生横向滚动条：
+   ≤ 480px 改为两列（已检测 5 个按钮顺排为 3 行，仍全部可见可点击）；
+   ≤ 320px 改为单列，按钮纵向排列。 */
+@container (max-width: 480px) {
+  .actions {
+    grid-template-columns: repeat(2, minmax(0, max-content));
+  }
+}
+
+@container (max-width: 320px) {
+  .actions {
+    grid-template-columns: minmax(0, max-content);
   }
 }
 

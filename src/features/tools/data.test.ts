@@ -13,8 +13,16 @@ function row(
 }
 
 describe("getToolRowActions", () => {
+  it("always offers a tutorial entry as the first action", () => {
+    expect(getToolRowActions(row("builtin", "notDetected"))[0]).toBe("tutorial");
+    expect(getToolRowActions(row("auto", "detected"))[0]).toBe("tutorial");
+    expect(getToolRowActions(row("manual", "detected"))[0]).toBe("tutorial");
+    expect(getToolRowActions(row("manual", "pathMissing"))[0]).toBe("tutorial");
+  });
+
   it("offers manual config and a first detect for a builtin placeholder", () => {
     expect(getToolRowActions(row("builtin", "notDetected"))).toEqual([
+      "tutorial",
       "manualConfig",
       "detect",
     ]);
@@ -25,12 +33,23 @@ describe("getToolRowActions", () => {
     expect(actions).toContain("redetect");
     expect(actions).not.toContain("revalidate");
     expect(actions).not.toContain("detect");
-    expect(actions).toEqual(["setDefault", "configure", "redetect", "remove"]);
+    expect(actions).toEqual([
+      "tutorial",
+      "setDefault",
+      "configure",
+      "redetect",
+      "remove",
+    ]);
   });
 
   it("does not repeat a detect action for a valid manual tool", () => {
     const actions = getToolRowActions(row("manual", "detected"));
-    expect(actions).toEqual(["setDefault", "configure", "remove"]);
+    expect(actions).toEqual([
+      "tutorial",
+      "setDefault",
+      "configure",
+      "remove",
+    ]);
     expect(actions).not.toContain("detect");
     expect(actions).not.toContain("redetect");
     expect(actions).not.toContain("revalidate");
@@ -43,14 +62,25 @@ describe("getToolRowActions", () => {
       expect(actions).toContain("revalidate");
       expect(actions).not.toContain("detect");
       expect(actions).not.toContain("redetect");
-      expect(actions).toEqual(["configure", "revalidate", "remove"]);
+      expect(actions).toEqual([
+        "tutorial",
+        "configure",
+        "revalidate",
+        "remove",
+      ]);
     },
   );
 
   it("toggles the default action based on the current default flag", () => {
     expect(
       getToolRowActions(row("auto", "detected", { isDefault: true })),
-    ).toEqual(["unsetDefault", "configure", "redetect", "remove"]);
+    ).toEqual([
+      "tutorial",
+      "unsetDefault",
+      "configure",
+      "redetect",
+      "remove",
+    ]);
   });
 
   it("omits the default action when the tool is not installed", () => {

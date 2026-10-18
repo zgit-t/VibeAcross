@@ -1,5 +1,6 @@
 import {
   FolderKanban,
+  GraduationCap,
   LayoutDashboard,
   ListChecks,
   RotateCcw,
@@ -22,6 +23,7 @@ export const PRIMARY_NAV: NavItem[] = [
   { id: "overview", labelKey: "nav.overview", icon: LayoutDashboard },
   { id: "projects", labelKey: "nav.projects", icon: FolderKanban },
   { id: "tools", labelKey: "nav.tools", icon: Wrench },
+  { id: "tutorials", labelKey: "nav.tutorials", icon: GraduationCap },
   { id: "tasks", labelKey: "nav.tasks", icon: ListChecks },
   { id: "sessions", labelKey: "nav.sessions", icon: RotateCcw },
 ];

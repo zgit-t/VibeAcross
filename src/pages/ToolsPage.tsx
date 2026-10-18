@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   AlertTriangle,
+  BookOpen,
   CheckCircle2,
   CircleDashed,
   CircleSlash,
@@ -16,6 +17,7 @@ import {
   XCircle,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { useApp } from "../context/AppContext";
 import { useTools } from "../context/ToolsContext";
 import { useI18n } from "../i18n";
 import { PageHeader } from "../components/layout/PageHeader";
@@ -73,6 +75,7 @@ export function ToolsPage() {
     removeTool,
     clearError,
   } = useTools();
+  const { openTutorial } = useApp();
   const { t } = useI18n();
 
   const [query, setQuery] = useState("");
@@ -326,6 +329,20 @@ export function ToolsPage() {
                   <div className={styles.actions}>
                     {getToolRowActions(tool).map((action) => {
                       switch (action) {
+                        case "tutorial":
+                          return (
+                            <Button
+                              key={action}
+                              variant="ghost"
+                              size="sm"
+                              icon={<BookOpen size={14} aria-hidden="true" />}
+                              onClick={() =>
+                                openTutorial(tool.toolId, tool.name)
+                              }
+                            >
+                              {t("tools.tutorial")}
+                            </Button>
+                          );
                         case "manualConfig":
                           return (
                             <Button

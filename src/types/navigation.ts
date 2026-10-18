@@ -3,6 +3,7 @@ export type ViewId =
   | "overview"
   | "projects"
   | "tools"
+  | "tutorials"
   | "tasks"
   | "sessions"
   | "settings";

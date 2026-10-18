@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppProvider } from "../../context/AppContext";
@@ -553,5 +554,146 @@ describe("RunSessionDialog 会话隔离与操作", () => {
     );
     expect(api.deleteSessionScoped).not.toHaveBeenCalled();
     expect(screen.getByText("X1")).toBeInTheDocument();
+  });
+});
+
+describe("RunSessionDialog 加载状态", () => {
+  it("读取历史会话时显示加载动画，完成后结束并展示列表", async () => {
+    api.sessionCapabilities.mockResolvedValue(capabilities("opencode"));
+    let resolveSync: (value: NativeSyncOutcome) => void = () => undefined;
+    api.syncNativeSessions.mockReturnValue(
+      new Promise<NativeSyncOutcome>((resolve) => {
+        resolveSync = resolve;
+      }),
+    );
+
+    renderDialog(toolX.id);
+
+    // 请求未完成：显示轻量加载动画与文案（不显示空状态 / 错误）。
+    const label = await screen.findByText("正在读取会话…");
+    const status = label.closest('[role="status"]');
+    expect(status).not.toBeNull();
+    expect(status?.querySelector("svg")).not.toBeNull();
+    expect(screen.queryByText("还没有历史会话")).not.toBeInTheDocument();
+
+    resolveSync(syncResult([session("x1", "install-x", "X1")]));
+
+    expect(await screen.findByText("X1")).toBeInTheDocument();
+    expect(screen.queryByText("正在读取会话…")).not.toBeInTheDocument();
+    expect(api.createNativeSession).not.toHaveBeenCalled();
+    expect(api.restoreNativeSession).not.toHaveBeenCalled();
+  });
+
+  it("返回空列表时显示空状态，而不是加载失败", async () => {
+    api.sessionCapabilities.mockResolvedValue(capabilities("opencode"));
+    api.syncNativeSessions.mockResolvedValue(syncResult([]));
+
+    renderDialog(toolX.id);
+
+    expect(await screen.findByText("还没有历史会话")).toBeInTheDocument();
+    expect(screen.queryByText("正在读取会话…")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "重试" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("读取失败时显示错误与重试入口，重试期间回到加载状态并重新读取", async () => {
+    api.sessionCapabilities.mockResolvedValue(capabilities("opencode"));
+    let resolveRetry: (value: NativeSyncOutcome) => void = () => undefined;
+    api.syncNativeSessions
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockImplementationOnce(
+        () =>
+          new Promise<NativeSyncOutcome>((resolve) => {
+            resolveRetry = resolve;
+          }),
+      );
+
+    renderDialog(toolX.id);
+
+    // 失败：不能一直显示动画，也不能把失败说成空列表。
+    expect(await screen.findByText("boom")).toBeInTheDocument();
+    expect(screen.queryByText("正在读取会话…")).not.toBeInTheDocument();
+    expect(screen.queryByText("还没有历史会话")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+
+    // 重试期间重新显示加载动画。
+    expect(await screen.findByText("正在读取会话…")).toBeInTheDocument();
+
+    resolveRetry(syncResult([session("x1", "install-x", "X1")]));
+
+    expect(await screen.findByText("X1")).toBeInTheDocument();
+    expect(screen.queryByText("boom")).not.toBeInTheDocument();
+    expect(api.syncNativeSessions).toHaveBeenCalledTimes(2);
+    // 重试只重新读取，不新建、不恢复。
+    expect(api.createNativeSession).not.toHaveBeenCalled();
+    expect(api.restoreNativeSession).not.toHaveBeenCalled();
+  });
+
+  it("同一查询进行中重复触发（工具数组更新）不会重复读取", async () => {
+    api.sessionCapabilities.mockResolvedValue(capabilities("opencode"));
+    let resolveSync: (value: NativeSyncOutcome) => void = () => undefined;
+    api.syncNativeSessions.mockReturnValue(
+      new Promise<NativeSyncOutcome>((resolve) => {
+        resolveSync = resolve;
+      }),
+    );
+
+    const view = renderDialog(toolX.id);
+    await waitFor(() => expect(api.syncNativeSessions).toHaveBeenCalledTimes(1));
+
+    // 用新的工具数组引用触发加载 effect 重跑（模拟父组件重渲染）。
+    view.rerender(
+      <AppProvider>
+        <I18nProvider>
+          <RevisionProvider>
+            <RunSessionDialog
+              open
+              project={project}
+              tools={[toolX, toolY]}
+              initialToolId={toolX.id}
+              onClose={() => undefined}
+            />
+          </RevisionProvider>
+        </I18nProvider>
+      </AppProvider>,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(api.syncNativeSessions).toHaveBeenCalledTimes(1);
+    expect(api.sessionCapabilities).toHaveBeenCalledTimes(1);
+
+    resolveSync(syncResult([session("x1", "install-x", "X1")]));
+    expect(await screen.findByText("X1")).toBeInTheDocument();
+  });
+
+  it("StrictMode 二次挂载也只读取一次", async () => {
+    api.sessionCapabilities.mockResolvedValue(capabilities("opencode"));
+    api.syncNativeSessions.mockResolvedValue(
+      syncResult([session("x1", "install-x", "X1")]),
+    );
+
+    render(
+      <StrictMode>
+        <AppProvider>
+          <I18nProvider>
+            <RevisionProvider>
+              <RunSessionDialog
+                open
+                project={project}
+                tools={[toolX, toolY]}
+                initialToolId={toolX.id}
+                onClose={() => undefined}
+              />
+            </RevisionProvider>
+          </I18nProvider>
+        </AppProvider>
+      </StrictMode>,
+    );
+
+    expect(await screen.findByText("X1")).toBeInTheDocument();
+    expect(api.syncNativeSessions).toHaveBeenCalledTimes(1);
+    expect(api.sessionCapabilities).toHaveBeenCalledTimes(1);
   });
 });
