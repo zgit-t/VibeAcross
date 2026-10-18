@@ -15,7 +15,7 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use super::{http, proc};
+use super::{diagnostics, http, proc};
 
 /// 服务启动的最长等待时间。
 const START_TIMEOUT: Duration = Duration::from_secs(25);
@@ -32,6 +32,7 @@ pub struct ServeHandle {
 impl ServeHandle {
     /// 可靠终止服务及其子进程树。
     pub fn terminate(&mut self) {
+        diagnostics::log(&format!("终止服务：pid={}", self.pid));
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
@@ -90,15 +91,22 @@ pub fn start(executable: &Path, working_dir: &Path) -> Result<ServeHandle, AppEr
     })?;
     let pid = child.id();
     let mut handle = ServeHandle { child, pid, port };
+    diagnostics::log(&format!(
+        "启动服务：exe={}；cwd={}；端口={port}；pid={pid}",
+        executable.display(),
+        working_dir.display()
+    ));
 
     let deadline = Instant::now() + START_TIMEOUT;
     loop {
         if let Ok(response) = http::request("127.0.0.1", port, "GET", "/global/health", None) {
             if response.status == 200 {
+                diagnostics::log(&format!("服务就绪：GET /global/health -> HTTP 200；port={port}"));
                 return Ok(handle);
             }
         }
         if Instant::now() >= deadline {
+            diagnostics::log(&format!("服务启动超时（GET /global/health 未返回 200）；port={port}"));
             handle.terminate();
             return Err(AppError::new(
                 "NATIVE_SERVER_TIMEOUT",

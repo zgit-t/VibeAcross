@@ -15,6 +15,7 @@
 pub mod claude;
 pub mod common;
 pub mod cursor;
+pub mod diagnostics;
 pub mod history;
 pub mod http;
 pub mod opencode;

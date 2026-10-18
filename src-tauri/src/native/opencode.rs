@@ -41,7 +41,7 @@ use std::time::Duration;
 
 use super::history::HistoryListing;
 use super::server;
-use super::{http, proc, NativeSessionInfo, ToolContext};
+use super::{diagnostics, http, proc, NativeSessionInfo, ToolContext};
 
 /// 枚举历史会话的超时时间。
 const LIST_TIMEOUT: Duration = Duration::from_secs(25);
@@ -51,6 +51,10 @@ fn with_server<T>(
     ctx: &ToolContext,
     run: impl FnOnce(u16) -> Result<T, AppError>,
 ) -> Result<T, AppError> {
+    diagnostics::log(&format!(
+        "===== 新会话操作开始（VibeAcross {}）=====",
+        env!("CARGO_PKG_VERSION")
+    ));
     let mut serve = server::start(&ctx.executable, &ctx.working_dir)?;
     let outcome = run(serve.port);
     serve.terminate();
@@ -106,6 +110,14 @@ impl SessionRoutes {
         }
     }
 
+    /// 人类可读的接口风格标签（用于诊断日志）。
+    fn label(&self) -> &'static str {
+        match self.api {
+            SessionApi::Classic => "经典接口（/session）",
+            SessionApi::V2 => "v2 接口（/api/session）",
+        }
+    }
+
     /// 单个会话的资源路径。
     fn session_path(&self, native_id: &str) -> String {
         format!("{}/{}", self.base(), encode_query(native_id))
@@ -124,11 +136,21 @@ impl SessionRoutes {
 fn discover_routes_from_doc(port: u16) -> Result<Option<SessionRoutes>, AppError> {
     let response = http::request("127.0.0.1", port, "GET", "/doc", None)?;
     if !(200..300).contains(&response.status) {
+        diagnostics::log(&format!(
+            "读取文档：GET /doc -> HTTP {}；body={}",
+            response.status,
+            diagnostics::summary(&response.body, 200)
+        ));
         return Err(AppError::new(
             "NATIVE_API_DISCOVERY",
             format!("读取 OpenCode 接口文档失败（HTTP {}）。", response.status),
         ));
     }
+    diagnostics::log(&format!(
+        "读取文档：GET /doc -> HTTP {}；body={}",
+        response.status,
+        diagnostics::summary(&response.body, 600)
+    ));
     let doc: Value = serde_json::from_str(&response.body).map_err(|error| {
         AppError::new(
             "NATIVE_API_DISCOVERY",
@@ -182,21 +204,31 @@ fn discover_routes_from_doc(port: u16) -> Result<Option<SessionRoutes>, AppError
 /// 「v2 服务」与「经典服务」的可靠依据，且不依赖 `opencode --version` 的字符串输出。
 /// 经典 1.19.3 并不提供 `/api/info`（其仅有 `/global/health` 与 `/api/health`），故不会误判。
 fn detect_v2_server(port: u16) -> bool {
-    let Ok(response) = http::request("127.0.0.1", port, "GET", "/api/info", None) else {
-        return false;
+    let response = match http::request("127.0.0.1", port, "GET", "/api/info", None) {
+        Ok(response) => response,
+        Err(error) => {
+            diagnostics::log(&format!(
+                "探测 v2：GET /api/info 请求失败 -> [{}] {}",
+                error.code, error.message
+            ));
+            return false;
+        }
     };
-    if !(200..300).contains(&response.status) {
-        return false;
-    }
-    serde_json::from_str::<Value>(&response.body)
+    let version = serde_json::from_str::<Value>(&response.body)
         .ok()
         .and_then(|value| {
             value
                 .get("version")
                 .and_then(Value::as_str)
                 .map(str::to_string)
-        })
-        .is_some()
+        });
+    diagnostics::log(&format!(
+        "探测 v2：GET /api/info -> HTTP {}；version={:?}；body={}",
+        response.status,
+        version,
+        diagnostics::summary(&response.body, 300)
+    ));
+    (200..300).contains(&response.status) && version.is_some()
 }
 
 /// 解析本次要使用的会话接口。
@@ -209,15 +241,30 @@ fn detect_v2_server(port: u16) -> bool {
 ///  4. 文档不可用（旧版本或非 JSON 文档）时保守回退经典接口，保持既有版本行为不变。
 fn resolve_routes(port: u16) -> Result<SessionRoutes, AppError> {
     if detect_v2_server(port) {
+        diagnostics::log("接口判定：命中 /api/info，使用 v2 接口（/api/session）");
         return Ok(SessionRoutes::v2());
     }
     match discover_routes_from_doc(port) {
-        Ok(Some(routes)) => Ok(routes),
-        Ok(None) => Err(AppError::new(
-            "NATIVE_API_UNSUPPORTED",
-            "当前 OpenCode 服务未提供可用的会话接口（已检查 /session 与 /api/session）。该版本或连接模式的接口路径可能不同。",
-        )),
-        Err(_) => Ok(SessionRoutes::classic()),
+        Ok(Some(routes)) => {
+            diagnostics::log(&format!("接口判定：依据 /doc 使用 {}", routes.label()));
+            Ok(routes)
+        }
+        Ok(None) => {
+            diagnostics::log(
+                "接口判定：/doc 可用但未提供会话创建接口 -> NATIVE_API_UNSUPPORTED",
+            );
+            Err(AppError::new(
+                "NATIVE_API_UNSUPPORTED",
+                "当前 OpenCode 服务未提供可用的会话接口（已检查 /session 与 /api/session）。该版本或连接模式的接口路径可能不同。",
+            ))
+        }
+        Err(error) => {
+            diagnostics::log(&format!(
+                "接口判定：/doc 不可用（[{}] {}），回退经典接口（/session）",
+                error.code, error.message
+            ));
+            Ok(SessionRoutes::classic())
+        }
     }
 }
 
@@ -239,7 +286,16 @@ fn create_at(port: u16, working_dir: &str, title: Option<&str>) -> Result<Native
 
     let (path, body) = create_request(routes, working_dir, title);
 
+    diagnostics::log(&format!(
+        "创建会话：目录={working_dir}；{label}；POST {path}；body={body}",
+        label = routes.label()
+    ));
     let response = http::request("127.0.0.1", port, "POST", &path, Some(&body))?;
+    diagnostics::log(&format!(
+        "创建会话响应：HTTP {}；body={}",
+        response.status,
+        diagnostics::summary(&response.body, 500)
+    ));
     if !(200..300).contains(&response.status) {
         return Err(http_failure(
             "NATIVE_CREATE_FAILED",
@@ -487,6 +543,7 @@ fn http_failure(
     if !detail.is_empty() {
         message.push_str(&format!("服务响应：{detail}"));
     }
+    message.push_str(&format!("（诊断日志：{}）", diagnostics::log_path().display()));
     AppError::new(code, message)
 }
 
