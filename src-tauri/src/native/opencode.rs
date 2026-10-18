@@ -22,9 +22,18 @@
 //! 该方法，于是返回 **HTTP 405 Method Not Allowed**——这既不是路径拼写错误，也不是
 //! 「应把 GET 改成 POST」。
 //!
-//! 因此本适配器在发起请求前，先读取服务自带的 OpenAPI 文档（`GET /doc`）据实选择接口，
-//! 而不是盲目轮换路径或方法；文档不可用（网络 / 解析失败）时保守回退到经典接口，以保持
-//! 对既有版本的行为不变。
+//! 因此本适配器在发起请求前先据实判断服务接口，而不是盲目轮换路径或方法：
+//!
+//!  1. `GET /api/info`（v2 的 ServerInfo，含 `version`）：命中即认定为 **v2 服务**，
+//!     直接使用 `/api/session`。经典 1.19.3 不提供该端点，故不会误判。这一点很关键：
+//!     v2 已移除经典 `/session` 接口，若仍按经典接口发起请求，就会命中服务的前端静态
+//!     处理器并得到 405；
+//!  2. 否则读取服务自带的 OpenAPI 文档（`GET /doc`）据实选择经典 / v2 接口；
+//!  3. 文档明确可用但没有会话创建接口时，如实报错；
+//!  4. 文档不可用（旧版本或文档非 JSON）时保守回退经典接口，保持既有版本行为不变。
+//!
+//! 判定只依赖**服务实例实际暴露的端点**，不解析 `opencode --version` 的输出字符串，
+//! 因此可兼容「可执行文件 / 服务实例 / API 版本不一致」的情况（例如新二进制连接旧服务）。
 
 use crate::error::AppError;
 use serde_json::Value;
@@ -79,6 +88,17 @@ impl SessionRoutes {
         }
     }
 
+    /// v2 接口：`/api/session`（经典 `/session` 在 v2 上已移除）。
+    fn v2() -> Self {
+        Self {
+            api: SessionApi::V2,
+            create: true,
+            get: true,
+            rename: true,
+            delete: true,
+        }
+    }
+
     fn base(&self) -> &'static str {
         match self.api {
             SessionApi::Classic => "/session",
@@ -100,8 +120,8 @@ impl SessionRoutes {
 /// 读取服务接口文档，解析出可用的会话接口。
 ///
 /// 返回 `Ok(Some)` 表示已确定接口；`Ok(None)` 表示文档可用但未提供任何会话创建接口；
-/// `Err` 表示文档不可读取 / 无法解析（调用方据此保守回退）。
-fn discover_routes(port: u16) -> Result<Option<SessionRoutes>, AppError> {
+/// `Err` 表示文档不可读取 / 无法解析（调用方据此改用其它证据）。
+fn discover_routes_from_doc(port: u16) -> Result<Option<SessionRoutes>, AppError> {
     let response = http::request("127.0.0.1", port, "GET", "/doc", None)?;
     if !(200..300).contains(&response.status) {
         return Err(AppError::new(
@@ -155,9 +175,43 @@ fn discover_routes(port: u16) -> Result<Option<SessionRoutes>, AppError> {
     Ok(None)
 }
 
-/// 解析本次要使用的会话接口：文档可用则据实选择，否则保守回退经典接口。
+/// 探测服务是否为 OpenCode v2。
+///
+/// v2 的会话 REST 接口整体迁移到 `/api/...`，并新增 `GET /api/info`（返回含 `version`
+/// 的 `ServerInfo`）；经典 `/session` 接口在该版本上已被移除。因此 `/api/info` 是区分
+/// 「v2 服务」与「经典服务」的可靠依据，且不依赖 `opencode --version` 的字符串输出。
+/// 经典 1.19.3 并不提供 `/api/info`（其仅有 `/global/health` 与 `/api/health`），故不会误判。
+fn detect_v2_server(port: u16) -> bool {
+    let Ok(response) = http::request("127.0.0.1", port, "GET", "/api/info", None) else {
+        return false;
+    };
+    if !(200..300).contains(&response.status) {
+        return false;
+    }
+    serde_json::from_str::<Value>(&response.body)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("version")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .is_some()
+}
+
+/// 解析本次要使用的会话接口。
+///
+/// 顺序：
+///  1. `GET /api/info` 命中即认定为 v2，直接使用 `/api/session`——避免 v2 服务（若其
+///     文档仍残留经典路径）被误判为经典接口，从而对已移除的 `/session` 发起请求得到 405；
+///  2. 否则读取服务自带的 OpenAPI 文档（`GET /doc`）据实选择经典 / v2 接口；
+///  3. 文档明确可用但没有会话创建接口时，如实报错；
+///  4. 文档不可用（旧版本或非 JSON 文档）时保守回退经典接口，保持既有版本行为不变。
 fn resolve_routes(port: u16) -> Result<SessionRoutes, AppError> {
-    match discover_routes(port) {
+    if detect_v2_server(port) {
+        return Ok(SessionRoutes::v2());
+    }
+    match discover_routes_from_doc(port) {
         Ok(Some(routes)) => Ok(routes),
         Ok(None) => Err(AppError::new(
             "NATIVE_API_UNSUPPORTED",
@@ -183,17 +237,7 @@ fn create_at(port: u16, working_dir: &str, title: Option<&str>) -> Result<Native
         ));
     }
 
-    let (path, body) = match routes.api {
-        SessionApi::Classic => (
-            format!("/session?directory={}", encode_query(working_dir)),
-            title_body(title),
-        ),
-        // v2 的请求体不接受 title，且需显式给出目录位置。
-        SessionApi::V2 => (
-            "/api/session".to_string(),
-            serde_json::json!({ "location": { "directory": working_dir } }).to_string(),
-        ),
-    };
+    let (path, body) = create_request(routes, working_dir, title);
 
     let response = http::request("127.0.0.1", port, "POST", &path, Some(&body))?;
     if !(200..300).contains(&response.status) {
@@ -207,7 +251,45 @@ fn create_at(port: u16, working_dir: &str, title: Option<&str>) -> Result<Native
     }
     let value = parse_json(&response.body, "原生会话")?;
     let value = unwrap_data(routes, value);
-    parse_info(&value).ok_or_else(|| AppError::new("NATIVE_RESPONSE", "原生会话响应缺少标识字段。"))
+    let info = parse_info(&value)
+        .ok_or_else(|| AppError::new("NATIVE_RESPONSE", "原生会话响应缺少标识字段。"))?;
+    // 只在服务返回了目录时校验：确认新会话确实落在目标项目目录，避免登记到错误位置。
+    if let Some(directory) = info.directory.as_deref() {
+        if !directory_matches(working_dir, Some(directory)) {
+            return Err(AppError::new(
+                "NATIVE_CREATE_FAILED",
+                format!(
+                    "原生会话创建返回的目录（{directory}）与目标项目目录（{working_dir}）不一致，已放弃登记，以免指向错误位置。"
+                ),
+            ));
+        }
+    }
+    Ok(info)
+}
+
+/// 构造创建会话的请求（路径 + 请求体）。
+///
+/// 两套接口的目录传递方式不同：经典接口用查询参数 `directory`，v2 用请求体
+/// `location.directory`；标题在两套接口中均作为请求体的 `title` 传入（v2 的创建
+/// 请求体同样接受可选的 `title`）。
+fn create_request(routes: SessionRoutes, working_dir: &str, title: Option<&str>) -> (String, String) {
+    let title = title.map(str::trim).filter(|value| !value.is_empty());
+    match routes.api {
+        SessionApi::Classic => (
+            format!("/session?directory={}", encode_query(working_dir)),
+            match title {
+                Some(value) => serde_json::json!({ "title": value }).to_string(),
+                None => "{}".to_string(),
+            },
+        ),
+        SessionApi::V2 => {
+            let mut body = serde_json::json!({ "location": { "directory": working_dir } });
+            if let Some(value) = title {
+                body["title"] = Value::String(value.to_string());
+            }
+            ("/api/session".to_string(), body.to_string())
+        }
+    }
 }
 
 /// 枚举当前项目目录下的历史会话（按更新时间倒序）。
@@ -239,8 +321,10 @@ pub fn list(ctx: &ToolContext) -> Result<Vec<NativeSessionInfo>, AppError> {
     let value: Value = serde_json::from_str(trimmed).map_err(|error| {
         AppError::new("NATIVE_RESPONSE", format!("无法解析原生会话列表：{error}"))
     })?;
+    // 经典 CLI 直接输出数组；v2 若包裹为 `{ "data": [...] }` 也一并兼容。
     let array = value
         .as_array()
+        .or_else(|| value.get("data").and_then(Value::as_array))
         .ok_or_else(|| AppError::new("NATIVE_RESPONSE", "原生会话列表格式异常。"))?;
 
     let mut items = Vec::new();
@@ -372,13 +456,6 @@ pub fn restore_launch_args(native_id: &str) -> Vec<String> {
     vec!["--session".to_string(), native_id.to_string()]
 }
 
-fn title_body(title: Option<&str>) -> String {
-    match title.map(str::trim).filter(|value| !value.is_empty()) {
-        Some(value) => serde_json::json!({ "title": value }).to_string(),
-        None => "{}".to_string(),
-    }
-}
-
 fn parse_json(body: &str, what: &str) -> Result<Value, AppError> {
     serde_json::from_str(body)
         .map_err(|error| AppError::new("NATIVE_RESPONSE", format!("无法解析{what}响应：{error}")))
@@ -452,12 +529,12 @@ fn parse_info(value: &Value) -> Option<NativeSessionInfo> {
         .map(str::to_string);
     let (created, updated) = match value.get("time") {
         Some(time) => (
-            time.get("created").and_then(Value::as_i64),
-            time.get("updated").and_then(Value::as_i64),
+            time.get("created").and_then(as_millis),
+            time.get("updated").and_then(as_millis),
         ),
         None => (
-            value.get("created").and_then(Value::as_i64),
-            value.get("updated").and_then(Value::as_i64),
+            value.get("created").and_then(as_millis),
+            value.get("updated").and_then(as_millis),
         ),
     };
     Some(NativeSessionInfo {
@@ -467,6 +544,13 @@ fn parse_info(value: &Value) -> Option<NativeSessionInfo> {
         created_at: created.and_then(ms_to_iso),
         updated_at: updated.and_then(ms_to_iso),
     })
+}
+
+/// 读取毫秒时间戳，兼容整数与浮点数（v2 的 `time` 字段在 OpenAPI 中为 JSON number）。
+fn as_millis(value: &Value) -> Option<i64> {
+    value
+        .as_i64()
+        .or_else(|| value.as_f64().map(|number| number as i64))
 }
 
 fn ms_to_iso(ms: i64) -> Option<String> {
@@ -561,6 +645,10 @@ mod tests {
                 .cloned()
                 .expect("没有记录到请求")
         }
+
+        fn all(&self) -> Vec<Recorded> {
+            self.records.lock().unwrap().clone()
+        }
     }
 
     fn read_request(stream: &TcpStream) -> std::io::Result<(String, String, String)> {
@@ -622,6 +710,17 @@ mod tests {
             "/session": { "get": {}, "post": {} },
             "/session/{sessionID}": { "get": {}, "patch": {}, "delete": {} },
         }))
+    }
+
+    /// v2 服务的 `GET /api/info` 响应（含 version，v2.0.32 实测字段）。
+    fn v2_info() -> String {
+        serde_json::json!({
+            "version": "2.0.32",
+            "pid": 4242,
+            "urls": [],
+            "paths": { "tmp": "C:\\tmp" },
+        })
+        .to_string()
     }
 
     #[test]
@@ -828,5 +927,199 @@ mod tests {
         assert_eq!(sanitize_detail("a\r\n\tb  c"), "a b c");
         let long = "x".repeat(400);
         assert!(sanitize_detail(&long).chars().count() <= 301);
+    }
+
+    // ---- 跨版本兼容回归（OpenCode 1.19.3 与 v2.0.32） ----
+
+    #[test]
+    fn classic_preferred_when_v1_doc_lists_both_surfaces() {
+        // 1.19.3 同时提供 /session 与 /api/session，但不提供 /api/info；应沿用经典接口。
+        let doc = doc_with(serde_json::json!({
+            "/session": { "get": {}, "post": {} },
+            "/session/{sessionID}": { "get": {}, "patch": {}, "delete": {} },
+            "/api/session": { "get": {}, "post": {} },
+        }));
+        let server = MockServer::start(move |method, path, _body| {
+            if method == "GET" && path == "/api/info" {
+                return (404, vec![], String::new());
+            }
+            if method == "GET" && path == "/doc" {
+                return (200, vec![], doc.clone());
+            }
+            if method == "POST" && path.starts_with("/session?directory=") {
+                return (
+                    200,
+                    vec![],
+                    r#"{"id":"ses_classic","title":null,"directory":"D:\\test","time":{"created":1,"updated":2}}"#
+                        .to_string(),
+                );
+            }
+            (405, vec![("Allow".to_string(), "GET".to_string())], "nope".to_string())
+        });
+
+        let info = create_at(server.port, r"D:\test", None).unwrap();
+        assert_eq!(info.native_id, "ses_classic");
+        assert!(
+            server.last().path.starts_with("/session?directory=D%3A%5Ctest"),
+            "经典接口应按查询参数传递 Windows 目录：{}",
+            server.last().path
+        );
+    }
+
+    #[test]
+    fn create_uses_v2_route_on_v2_server_without_doc() {
+        // v2.0.32：不再提供经典 /session 与 /doc，仅有 /api/info 与 /api/session。
+        let info_body = v2_info();
+        let server = MockServer::start(move |method, path, _body| {
+            if method == "GET" && path == "/api/info" {
+                return (200, vec![], info_body.clone());
+            }
+            if method == "POST" && path == "/api/session" {
+                return (
+                    200,
+                    vec![],
+                    r#"{"data":{"id":"ses_v2","title":"标题","location":{"directory":"D:\\test"},"time":{"created":1700000000000,"updated":1700000001000}}}"#
+                        .to_string(),
+                );
+            }
+            // 经典 /session 在 v2 上已移除，服务落到静态处理器返回 405。
+            (405, vec![("Allow".to_string(), "GET".to_string())], "Method Not Allowed".to_string())
+        });
+
+        let info = create_at(server.port, r"D:\test", Some("标题")).unwrap();
+        assert_eq!(info.native_id, "ses_v2");
+        assert_eq!(info.directory.as_deref(), Some(r"D:\test"));
+
+        let request = server.last();
+        assert_eq!(request.method, "POST");
+        assert_eq!(
+            request.path, "/api/session",
+            "v2 服务必须使用 /api/session，而不是已移除的 /session"
+        );
+        // 目录经请求体 location.directory 传递，且 JSON 正确转义 Windows 反斜杠。
+        let parsed: Value = serde_json::from_str(&request.body).unwrap();
+        assert_eq!(parsed["location"]["directory"], serde_json::json!(r"D:\test"));
+        assert_eq!(parsed["title"], serde_json::json!("标题"));
+    }
+
+    #[test]
+    fn create_uses_v2_when_doc_is_not_json_but_server_is_v2() {
+        // v2 若对外暴露 HTML 文档，解析失败也不能回退到已移除的经典接口。
+        let info_body = v2_info();
+        let server = MockServer::start(move |method, path, _body| {
+            if method == "GET" && path == "/api/info" {
+                return (200, vec![], info_body.clone());
+            }
+            if method == "GET" && path == "/doc" {
+                return (200, vec![], "<!doctype html><html></html>".to_string());
+            }
+            if method == "POST" && path == "/api/session" {
+                return (
+                    200,
+                    vec![],
+                    r#"{"data":{"id":"ses_v2","location":{"directory":"D:\\test"},"time":{"created":1,"updated":2}}}"#
+                        .to_string(),
+                );
+            }
+            (500, vec![], "unexpected".to_string())
+        });
+
+        let info = create_at(server.port, r"D:\test", None).unwrap();
+        assert_eq!(info.native_id, "ses_v2");
+    }
+
+    #[test]
+    fn v2_create_405_reports_error_and_does_not_retry() {
+        let info_body = v2_info();
+        let server = MockServer::start(move |method, path, _body| {
+            if method == "GET" && path == "/api/info" {
+                return (200, vec![], info_body.clone());
+            }
+            if method == "POST" && path == "/api/session" {
+                return (
+                    405,
+                    vec![("Allow".to_string(), "GET".to_string())],
+                    r#"{"message":"Method Not Allowed"}"#.to_string(),
+                );
+            }
+            (500, vec![], "unexpected".to_string())
+        });
+
+        let error = create_at(server.port, r"D:\test", None).unwrap_err();
+        assert_eq!(error.code, "NATIVE_CREATE_FAILED");
+        assert!(error.message.contains("POST /api/session"), "{}", error.message);
+        assert!(error.message.contains("405"), "{}", error.message);
+        // 绝不因 405 切换接口 / 重试，避免产生重复会话。
+        let creates = server
+            .all()
+            .into_iter()
+            .filter(|record| record.method == "POST")
+            .count();
+        assert_eq!(creates, 1, "创建失败后不得重复发起创建请求");
+    }
+
+    #[test]
+    fn v2_get_rename_delete_use_api_paths() {
+        let info_body = v2_info();
+        let server = MockServer::start(move |method, path, _body| {
+            if method == "GET" && path == "/api/info" {
+                return (200, vec![], info_body.clone());
+            }
+            if method == "GET" && path == "/api/session/ses_x" {
+                return (
+                    200,
+                    vec![],
+                    r#"{"data":{"id":"ses_x","title":"t","location":{"directory":"C:\\proj"},"time":{"created":1,"updated":2}}}"#
+                        .to_string(),
+                );
+            }
+            if method == "PATCH" && path == "/api/session/ses_x" {
+                return (204, vec![], String::new());
+            }
+            if method == "DELETE" && path == "/api/session/ses_x" {
+                return (204, vec![], String::new());
+            }
+            (405, vec![("Allow".to_string(), "GET".to_string())], "nope".to_string())
+        });
+
+        assert!(get_at(server.port, r"C:\proj", "ses_x").unwrap().is_some());
+        assert!(rename_at(server.port, "ses_x", "新标题").is_ok());
+        assert!(delete_at(server.port, "ses_x").is_ok());
+    }
+
+    #[test]
+    fn create_rejects_response_for_other_directory() {
+        let info_body = v2_info();
+        let server = MockServer::start(move |method, path, _body| {
+            if method == "GET" && path == "/api/info" {
+                return (200, vec![], info_body.clone());
+            }
+            if method == "POST" && path == "/api/session" {
+                return (
+                    200,
+                    vec![],
+                    r#"{"data":{"id":"ses_wrong","location":{"directory":"D:\\other"},"time":{"created":1,"updated":2}}}"#
+                        .to_string(),
+                );
+            }
+            (500, vec![], "unexpected".to_string())
+        });
+
+        let error = create_at(server.port, r"D:\test", None).unwrap_err();
+        assert_eq!(error.code, "NATIVE_CREATE_FAILED");
+        assert!(error.message.contains("D:\\test") || error.message.contains(r"D:\test"));
+    }
+
+    #[test]
+    fn parses_v2_float_time() {
+        let value: Value = serde_json::from_str(
+            r#"{"id":"ses_f","title":"t","location":{"directory":"D:\\test"},
+                "time":{"created":1700000000000.0,"updated":1700000002000.0}}"#,
+        )
+        .unwrap();
+        let info = parse_info(&value).unwrap();
+        assert_eq!(info.native_id, "ses_f");
+        assert!(info.created_at.is_some());
+        assert!(info.updated_at.is_some());
     }
 }
