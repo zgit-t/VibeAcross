@@ -213,9 +213,32 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   "projects.launchedTitle": "Launched the {tool} process",
   "projects.launchedMessage": "Working directory: {dir}",
   "projects.launchFailedTitle": "Failed to launch the tool",
-  "projects.confirmRemoveTitle": "Remove project?",
-  "projects.confirmRemoveDescription":
-    "This removes 「{name}」 from the list. The folder on disk is left untouched.",
+
+  // Remove project (shared by list and detail)
+  "removeProject.title": "Remove project",
+  "removeProject.description":
+    "Choose how to handle this project. The default only removes the record and never deletes files on disk.",
+  "removeProject.scopeAria": "Removal scope",
+  "removeProject.optionRecord": "Remove from VibeAcross only",
+  "removeProject.optionRecordDescription":
+    "Removes the project record from the list. The folder and its files on disk stay untouched.",
+  "removeProject.optionRecordNote":
+    "Recommended. You can import the folder again at any time.",
+  "removeProject.optionFolder": "Also delete the folder on disk",
+  "removeProject.optionFolderDescription":
+    "Deletes the project folder and everything inside it on disk.",
+  "removeProject.optionFolderNote":
+    "This permanently deletes files and cannot be undone.",
+  "removeProject.folderConfirmTitle": "Delete the folder on disk?",
+  "removeProject.folderConfirmDescription":
+    "This permanently deletes the disk folder for 「{name}」 and everything inside it. This cannot be undone.",
+  "removeProject.folderWarning":
+    "The following folder and all of its files and subfolders will be permanently deleted:",
+  "removeProject.nameLabel": "Project",
+  "removeProject.pathLabel": "Path",
+  "removeProject.folderConfirmHint":
+    "The project record is removed from VibeAcross only after the folder is deleted. If deletion fails, the record is kept so you can retry.",
+  "removeProject.folderConfirmLabel": "Delete folder and remove",
 
   // Project list
   "projectList.noTool": "No tool selected",
@@ -294,11 +317,8 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   "projectDetail.lastOpened": "Last opened",
   "projectDetail.dangerLabel": "Danger zone",
   "projectDetail.dangerHint":
-    "Removing only deletes the record from VibeAcross; the project folder on disk is not deleted.",
+    "When removing, you can choose to remove only the record, or also delete the folder on disk.",
   "projectDetail.removeProject": "Remove project",
-  "projectDetail.confirmRemoveTitle": "Remove project?",
-  "projectDetail.confirmRemoveDescription":
-    "This removes 「{name}」 from the list. The folder on disk is left untouched.",
   "projectDetail.nameEmpty": "Project name cannot be empty.",
   "projectDetail.actionFailed": "Action failed.",
   "projectDetail.launchFailed": "Failed to launch the tool.",

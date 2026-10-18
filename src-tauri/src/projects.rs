@@ -350,6 +350,167 @@ pub fn remove_project(conn: &Connection, id: &str) -> Result<(), AppError> {
     Ok(())
 }
 
+/// 大小写不敏感地比较两个路径是否指向同一位置（Windows 语义）。
+fn paths_equal(a: &Path, b: &Path) -> bool {
+    let normalize = |value: &Path| {
+        value
+            .to_string_lossy()
+            .replace('/', "\\")
+            .trim_end_matches('\\')
+            .to_owned()
+    };
+    let left = normalize(a);
+    let right = normalize(b);
+    if left.is_empty() || right.is_empty() {
+        return left == right;
+    }
+    if cfg!(windows) {
+        left.eq_ignore_ascii_case(&right)
+    } else {
+        left == right
+    }
+}
+
+/// 判断路径是否含有可删除的叶子目录。
+///
+/// 用于拒绝磁盘根、UNC 共享根等只有前缀/根组件的路径，
+/// 避免退化为对整个盘符或共享执行删除。
+fn has_deletable_leaf(path: &Path) -> bool {
+    path.components()
+        .any(|component| matches!(component, std::path::Component::Normal(_)))
+}
+
+/// 判断目标目录是否为受保护位置（系统目录、用户主目录、当前工作目录及其祖先）。
+fn is_protected_dir(target: &Path) -> bool {
+    const PROTECTED_ENV: &[&str] = &[
+        "SystemRoot",
+        "windir",
+        "ProgramFiles",
+        "ProgramFiles(x86)",
+        "ProgramData",
+        "USERPROFILE",
+        "PUBLIC",
+        "APPDATA",
+        "LOCALAPPDATA",
+    ];
+
+    let mut protected: Vec<PathBuf> = Vec::new();
+    for key in PROTECTED_ENV {
+        if let Ok(value) = std::env::var(key) {
+            let value = value.trim();
+            if !value.is_empty() {
+                let raw = PathBuf::from(value);
+                let resolved = std::fs::canonicalize(&raw).unwrap_or(raw);
+                protected.push(strip_extended_prefix(&resolved));
+            }
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        let resolved = std::fs::canonicalize(&cwd).unwrap_or(cwd);
+        protected.push(strip_extended_prefix(&resolved));
+    }
+
+    protected
+        .iter()
+        .any(|entry| paths_equal(target, entry) || entry.starts_with(target))
+}
+
+/// 删除磁盘上的项目目录。
+///
+/// 传入的 `stored_path` 必须来自数据库登记的项目路径（由后端按项目 ID 重新解析，
+/// 绝不信任前端传入的路径）。只有在通过全部安全校验后才会执行递归删除，
+/// 校验失败时直接报错，不会退化为无约束的 `remove_dir_all`。
+pub fn delete_project_dir(stored_path: &str) -> Result<(), AppError> {
+    let trimmed = stored_path.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::new("PATH_EMPTY", "项目路径为空，已拒绝删除。"));
+    }
+
+    let raw = PathBuf::from(trimmed);
+    if !raw.is_absolute() {
+        return Err(AppError::new(
+            "PATH_NOT_ABSOLUTE",
+            format!("项目路径不是绝对路径，已拒绝删除：{trimmed}"),
+        ));
+    }
+
+    // 词法检查：拒绝磁盘根 / UNC 共享根。
+    if !has_deletable_leaf(&raw) {
+        return Err(AppError::new(
+            "PATH_UNSAFE_ROOT",
+            format!("拒绝删除根目录或磁盘根：{trimmed}"),
+        ));
+    }
+
+    let metadata = std::fs::symlink_metadata(&raw).map_err(|_| {
+        AppError::new(
+            "PATH_NOT_FOUND",
+            format!("项目目录不存在或不可访问：{trimmed}"),
+        )
+    })?;
+
+    if metadata.file_type().is_symlink() {
+        return Err(AppError::new(
+            "PATH_IS_LINK",
+            format!("项目目录是符号链接或目录联接，已拒绝删除：{trimmed}"),
+        ));
+    }
+    if !metadata.is_dir() {
+        return Err(AppError::new(
+            "PATH_NOT_DIR",
+            format!("项目路径不是目录：{trimmed}"),
+        ));
+    }
+
+    // 解析真实路径：识别路径穿越（..）、符号链接与目录联接。
+    // 无法解析（例如已损坏的链接）时同样拒绝。
+    let canonical_full = std::fs::canonicalize(&raw).map_err(|_| {
+        AppError::new(
+            "PATH_NOT_FOUND",
+            format!("无法解析项目目录，已拒绝删除：{trimmed}"),
+        )
+    })?;
+    let canonical = strip_extended_prefix(&canonical_full);
+    let registered = strip_extended_prefix(&raw);
+
+    if !paths_equal(&canonical, &registered) {
+        return Err(AppError::new(
+            "PROJECT_PATH_CHANGED",
+            "项目目录已被移动、替换或指向了其它位置，已拒绝删除，请重新定位。",
+        ));
+    }
+
+    if is_protected_dir(&canonical) {
+        return Err(AppError::new(
+            "PATH_UNSAFE",
+            format!("拒绝删除受保护的系统或用户目录：{}", canonical.display()),
+        ));
+    }
+
+    std::fs::remove_dir_all(&canonical).map_err(|error| {
+        AppError::new(
+            "DIR_DELETE_FAILED",
+            format!("删除项目目录失败：{error}"),
+        )
+    })
+}
+
+/// 按指定范围移除项目。
+///
+/// `delete_dir` 为 `true` 时，先按项目 ID 从数据库取出可信路径并删除磁盘目录，
+/// 只有磁盘删除成功后才移除数据库记录；删除失败则保留记录并返回错误，便于重试。
+pub fn remove_project_with_scope(
+    conn: &Connection,
+    id: &str,
+    delete_dir: bool,
+) -> Result<(), AppError> {
+    if delete_dir {
+        let project = get_project(conn, id)?;
+        delete_project_dir(&project.path)?;
+    }
+    remove_project(conn, id)
+}
+
 /// 将项目重新定位到新的本地目录（不改动磁盘文件）。
 pub fn relocate_project(conn: &Connection, id: &str, path_raw: &str) -> Result<Project, AppError> {
     get_project(conn, id)?;

@@ -97,9 +97,14 @@ pub fn relocate_project(
 }
 
 #[tauri::command]
-pub fn remove_project(db: State<Database>, id: String) -> Result<(), AppError> {
+pub fn remove_project(
+    db: State<Database>,
+    id: String,
+    delete_folder: Option<bool>,
+) -> Result<(), AppError> {
     let conn = db.conn()?;
-    projects::remove_project(&conn, &id)?;
+    let delete_dir = delete_folder.unwrap_or(false);
+    projects::remove_project_with_scope(&conn, &id, delete_dir)?;
     Ok(())
 }
 

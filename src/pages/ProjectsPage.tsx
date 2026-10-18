@@ -6,7 +6,6 @@ import { useTools } from "../context/ToolsContext";
 import { useI18n } from "../i18n";
 import { PageHeader } from "../components/layout/PageHeader";
 import { Button } from "../components/ui/Button";
-import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Notice } from "../components/ui/Notice";
 import { SearchInput } from "../components/ui/SearchInput";
@@ -15,6 +14,7 @@ import { Switch } from "../components/ui/Switch";
 import { ProjectList } from "../features/projects/ProjectList";
 import { AddProjectDialog } from "../features/projects/AddProjectDialog";
 import { ProjectDetailDialog } from "../features/projects/ProjectDetailDialog";
+import { RemoveProjectDialog } from "../features/projects/RemoveProjectDialog";
 import { RunSessionFlow } from "../features/aiSessions/RunSessionFlow";
 import { filterProjects } from "../features/projects/filter";
 import { toErrorMessage } from "../services/backend";
@@ -33,7 +33,6 @@ export function ProjectsPage() {
     setSort,
     refresh,
     setFavorite,
-    remove,
     touchOpened,
     setProjectTool,
     openDirectory,
@@ -56,7 +55,6 @@ export function ProjectsPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pendingRemove, setPendingRemove] = useState<Project | null>(null);
-  const [removing, setRemoving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [runProject, setRunProject] = useState<Project | null>(null);
   const [notice, setNotice] = useState<{
@@ -96,25 +94,6 @@ export function ProjectsPage() {
     setSelectedId(project.id);
     setActionError(null);
     void touchOpened(project.id).catch(() => undefined);
-  }
-
-  async function handleRemove() {
-    if (!pendingRemove) {
-      return;
-    }
-    setRemoving(true);
-    setActionError(null);
-    try {
-      await remove(pendingRemove.id);
-      if (selectedId === pendingRemove.id) {
-        setSelectedId(null);
-      }
-      setPendingRemove(null);
-    } catch (cause) {
-      setActionError(toErrorMessage(cause, t("projects.removeFailed")));
-    } finally {
-      setRemoving(false);
-    }
   }
 
   async function handleToggleFavorite(project: Project) {
@@ -316,21 +295,14 @@ export function ProjectsPage() {
         }}
       />
 
-      <ConfirmDialog
-        open={pendingRemove !== null}
-        title={t("projects.confirmRemoveTitle")}
-        description={
-          pendingRemove
-            ? t("projects.confirmRemoveDescription", {
-                name: pendingRemove.name,
-              })
-            : undefined
-        }
-        confirmLabel={t("common.remove")}
-        tone="danger"
-        busy={removing}
-        onConfirm={handleRemove}
+      <RemoveProjectDialog
+        project={pendingRemove}
         onClose={() => setPendingRemove(null)}
+        onRemoved={(removed) => {
+          if (selectedId === removed.id) {
+            setSelectedId(null);
+          }
+        }}
       />
     </div>
   );

@@ -33,6 +33,7 @@ import {
 } from "./health";
 import { formatDateTime } from "../../utils/format";
 import { ProjectTasksSection } from "./ProjectTasksSection";
+import { RemoveProjectDialog } from "./RemoveProjectDialog";
 import { ProjectSessionSection } from "../aiSessions/ProjectSessionSection";
 import type {
   ProjectHealth,
@@ -65,7 +66,6 @@ export function ProjectDetailDialog({
     updateDescription,
     setFavorite,
     relocate,
-    remove,
     openDirectory,
     checkHealth,
   } = useProjects();
@@ -224,17 +224,6 @@ export function ProjectDetailDialog({
     } else {
       setError(t("health.copyFailed"));
     }
-  }
-
-  function handleRemove() {
-    if (!project) {
-      return;
-    }
-    void run(async () => {
-      await remove(project.id);
-      setConfirmRemove(false);
-      onClose();
-    });
   }
 
   const pathHealthy = isPathHealthy(pathStatus);
@@ -488,17 +477,10 @@ export function ProjectDetailDialog({
 
       {project && (
         <>
-          <ConfirmDialog
-            open={confirmRemove}
-            title={t("projectDetail.confirmRemoveTitle")}
-            description={t("projectDetail.confirmRemoveDescription", {
-              name: project.name,
-            })}
-            confirmLabel={t("common.remove")}
-            tone="danger"
-            busy={busy}
-            onConfirm={handleRemove}
+          <RemoveProjectDialog
+            project={confirmRemove ? project : null}
             onClose={() => setConfirmRemove(false)}
+            onRemoved={onClose}
           />
 
           <ConfirmDialog

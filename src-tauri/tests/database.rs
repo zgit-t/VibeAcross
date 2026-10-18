@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 use vibeacross_lib::db::Database;
 use vibeacross_lib::migrations;
@@ -443,6 +443,152 @@ fn remove_project_only_removes_record() {
 
     let missing = projects::remove_project(&conn, &project.id).unwrap_err();
     assert_eq!(missing.code, "PROJECT_NOT_FOUND");
+}
+
+#[test]
+fn remove_project_with_scope_keeps_dir_when_not_deleting() {
+    let workspace = temp_dir();
+    let db = Database::open_in_memory().unwrap();
+    let conn = db.conn().unwrap();
+
+    let project =
+        projects::create_project(&conn, "KeepDir", &workspace.path().to_string_lossy()).unwrap();
+    let project_dir = PathBuf::from(&project.path);
+
+    projects::remove_project_with_scope(&conn, &project.id, false).unwrap();
+
+    assert!(projects::get_project(&conn, &project.id).is_err());
+    assert!(project_dir.is_dir(), "仅移除记录时磁盘目录应保留");
+}
+
+#[test]
+fn remove_project_with_folder_deletes_only_target_dir() {
+    let workspace = temp_dir();
+    let db = Database::open_in_memory().unwrap();
+    let conn = db.conn().unwrap();
+
+    let project =
+        projects::create_project(&conn, "DeleteMe", &workspace.path().to_string_lossy()).unwrap();
+    let project_dir = PathBuf::from(&project.path);
+    std::fs::write(project_dir.join("file.txt"), b"hello").unwrap();
+
+    // 不属于该项目的同级目录（模拟工具原生数据）不应被删除。
+    let sibling = workspace.path().join("native-session-data");
+    std::fs::create_dir(&sibling).unwrap();
+    std::fs::write(sibling.join("session.json"), b"{}").unwrap();
+
+    projects::remove_project_with_scope(&conn, &project.id, true).unwrap();
+
+    assert!(projects::get_project(&conn, &project.id).is_err(), "记录应被移除");
+    assert!(!project_dir.exists(), "目标目录应被删除");
+    assert!(sibling.join("session.json").is_file(), "其它目录不应被删除");
+    assert!(workspace.path().is_dir(), "父目录不应被删除");
+}
+
+#[test]
+fn remove_project_with_folder_does_not_touch_other_projects() {
+    let workspace = temp_dir();
+    let db = Database::open_in_memory().unwrap();
+    let conn = db.conn().unwrap();
+
+    let target =
+        projects::create_project(&conn, "Target", &workspace.path().to_string_lossy()).unwrap();
+    let other =
+        projects::create_project(&conn, "Other", &workspace.path().to_string_lossy()).unwrap();
+
+    projects::remove_project_with_scope(&conn, &target.id, true).unwrap();
+
+    assert!(projects::get_project(&conn, &target.id).is_err());
+    assert!(projects::get_project(&conn, &other.id).is_ok(), "其它项目记录应保留");
+    assert!(Path::new(&other.path).is_dir(), "其它项目目录应保留");
+}
+
+#[test]
+fn delete_project_dir_rejects_unsafe_paths() {
+    assert_eq!(
+        projects::delete_project_dir("").unwrap_err().code,
+        "PATH_EMPTY"
+    );
+    assert_eq!(
+        projects::delete_project_dir("   ").unwrap_err().code,
+        "PATH_EMPTY"
+    );
+    assert_eq!(
+        projects::delete_project_dir("relative\\dir").unwrap_err().code,
+        "PATH_NOT_ABSOLUTE"
+    );
+
+    // 磁盘根：只有盘符前缀与根组件，没有可删除的叶子目录。
+    assert_eq!(
+        projects::delete_project_dir("C:\\").unwrap_err().code,
+        "PATH_UNSAFE_ROOT"
+    );
+
+    // 不存在的目录。
+    let missing = temp_dir().path().join("does-not-exist");
+    assert_eq!(
+        projects::delete_project_dir(&missing.to_string_lossy())
+            .unwrap_err()
+            .code,
+        "PATH_NOT_FOUND"
+    );
+}
+
+#[test]
+fn delete_project_dir_rejects_path_traversal() {
+    let temp_root = temp_dir();
+    let sub = temp_root.path().join("sub");
+    std::fs::create_dir(&sub).unwrap();
+    let real = temp_root.path().join("real");
+    std::fs::create_dir(&real).unwrap();
+
+    // 用 .. 让词法路径与解析后的真实路径不一致，应被拒绝且不删除任何内容。
+    let traversal = format!("{}\\sub\\..\\real", temp_root.path().to_string_lossy());
+    let error = projects::delete_project_dir(&traversal).unwrap_err();
+    assert_eq!(error.code, "PROJECT_PATH_CHANGED");
+    assert!(real.is_dir(), "拒绝后不应删除目录");
+}
+
+#[cfg(windows)]
+#[test]
+fn delete_project_dir_rejects_symlink_without_following() {
+    use std::os::windows::fs::symlink_dir;
+
+    let workspace = temp_dir();
+    let real = workspace.path().join("real");
+    std::fs::create_dir(&real).unwrap();
+    std::fs::write(real.join("keep.txt"), b"keep").unwrap();
+
+    let link = workspace.path().join("link");
+    if symlink_dir(&real, &link).is_err() {
+        // 创建符号链接需要开发者模式或相应权限，无法创建时跳过。
+        return;
+    }
+
+    let error = projects::delete_project_dir(&link.to_string_lossy()).unwrap_err();
+    assert_eq!(error.code, "PATH_IS_LINK");
+    assert!(real.join("keep.txt").is_file(), "链接目标目录不应被删除");
+}
+
+#[test]
+fn remove_project_with_folder_failure_keeps_record() {
+    let workspace = temp_dir();
+    let db = Database::open_in_memory().unwrap();
+    let conn = db.conn().unwrap();
+
+    let project =
+        projects::create_project(&conn, "Broken", &workspace.path().to_string_lossy()).unwrap();
+
+    // 把目录替换成同名文件，制造磁盘删除必然失败的场景。
+    std::fs::remove_dir_all(&project.path).unwrap();
+    std::fs::write(&project.path, b"not a dir").unwrap();
+
+    let error = projects::remove_project_with_scope(&conn, &project.id, true).unwrap_err();
+    assert_eq!(error.code, "PATH_NOT_DIR");
+    assert!(
+        projects::get_project(&conn, &project.id).is_ok(),
+        "磁盘删除失败时应保留记录以便重试"
+    );
 }
 
 #[test]

@@ -67,8 +67,9 @@ export function relocateProject(id: string, path: string): Promise<Project> {
   return invoke<Project>("relocate_project", { id, path });
 }
 
-export function removeProject(id: string): Promise<void> {
-  return invoke<void>("remove_project", { id });
+/** 移除项目。`deleteFolder` 为真时同时删除磁盘上的项目目录。 */
+export function removeProject(id: string, deleteFolder = false): Promise<void> {
+  return invoke<void>("remove_project", { id, deleteFolder });
 }
 
 /** 设置或清除项目的默认开发工具。传入 null 表示清除关联。 */

@@ -207,9 +207,30 @@ export const zhCN = {
   "projects.launchedTitle": "已启动 {tool} 的进程",
   "projects.launchedMessage": "工作目录：{dir}",
   "projects.launchFailedTitle": "启动工具失败",
-  "projects.confirmRemoveTitle": "移除项目？",
-  "projects.confirmRemoveDescription":
-    "将从列表中移除「{name}」，磁盘目录保持不动。",
+
+  // 移除项目（列表与详情共用）
+  "removeProject.title": "移除项目",
+  "removeProject.description":
+    "选择如何处理该项目。默认仅移除记录，不会删除磁盘文件。",
+  "removeProject.scopeAria": "移除方式",
+  "removeProject.optionRecord": "仅从 VibeAcross 移除",
+  "removeProject.optionRecordDescription":
+    "从列表中移除项目记录，磁盘上的文件夹及其文件保持不变。",
+  "removeProject.optionRecordNote": "推荐，可随时重新导入该目录。",
+  "removeProject.optionFolder": "同时删除磁盘文件夹",
+  "removeProject.optionFolderDescription":
+    "删除磁盘上的项目文件夹及其全部内容。",
+  "removeProject.optionFolderNote": "此操作将永久删除文件，且无法撤销。",
+  "removeProject.folderConfirmTitle": "确认删除磁盘文件夹？",
+  "removeProject.folderConfirmDescription":
+    "此操作将永久删除项目「{name}」的磁盘文件夹及其全部内容，且无法撤销。",
+  "removeProject.folderWarning":
+    "即将永久删除以下目录及其中的全部文件与子目录：",
+  "removeProject.nameLabel": "项目",
+  "removeProject.pathLabel": "路径",
+  "removeProject.folderConfirmHint":
+    "只有磁盘删除成功，项目记录才会从 VibeAcross 中移除；若删除失败，记录会保留，可重试。",
+  "removeProject.folderConfirmLabel": "永久删除并移除",
 
   // 项目列表
   "projectList.noTool": "未选择工具",
@@ -286,11 +307,8 @@ export const zhCN = {
   "projectDetail.lastOpened": "最近访问",
   "projectDetail.dangerLabel": "危险操作",
   "projectDetail.dangerHint":
-    "移除后仅从 VibeAcross 中删除记录，不会删除磁盘上的项目目录。",
+    "移除时可选择仅删除记录，或同时删除磁盘文件夹。",
   "projectDetail.removeProject": "移除项目",
-  "projectDetail.confirmRemoveTitle": "移除项目？",
-  "projectDetail.confirmRemoveDescription":
-    "将从列表中移除「{name}」，磁盘目录保持不动。",
   "projectDetail.nameEmpty": "项目名称不能为空。",
   "projectDetail.actionFailed": "操作失败。",
   "projectDetail.launchFailed": "启动工具失败。",

@@ -1,6 +1,6 @@
 [package]
 name = "vibeacross"
-version = "1.3.0"
+version = "1.3.1"
 description = "VibeAcross 本地桌面工作区管理工具"
 authors = ["VibeAcross"]
 edition = "2021"

@@ -38,7 +38,7 @@ interface ProjectsContextValue {
   updateDescription: (id: string, description: string | null) => Promise<void>;
   setFavorite: (id: string, value: boolean) => Promise<void>;
   relocate: (id: string, path: string) => Promise<void>;
-  remove: (id: string) => Promise<void>;
+  remove: (id: string, deleteFolder?: boolean) => Promise<void>;
   touchOpened: (id: string) => Promise<void>;
   /** 设置或清除项目的默认开发工具。 */
   setProjectTool: (id: string, toolId: string | null) => Promise<void>;
@@ -158,8 +158,8 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
         mutate(() => projectsService.relocateProject(id, path), true).then(
           () => undefined,
         ),
-      remove: (id) =>
-        mutate(() => projectsService.removeProject(id), true).then(
+      remove: (id, deleteFolder = false) =>
+        mutate(() => projectsService.removeProject(id, deleteFolder), true).then(
           () => undefined,
         ),
       touchOpened: (id) =>

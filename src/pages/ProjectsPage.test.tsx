@@ -107,6 +107,7 @@ const projectsApi = projectsService as unknown as {
   listProjects: ReturnType<typeof vi.fn>;
   checkProjectHealth: ReturnType<typeof vi.fn>;
   openProjectDir: ReturnType<typeof vi.fn>;
+  removeProject: ReturnType<typeof vi.fn>;
 };
 const projectToolsApi = projectToolsService as unknown as {
   listProjectTools: ReturnType<typeof vi.fn>;
@@ -240,6 +241,7 @@ async function openDialog() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.localStorage.clear();
   (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
   projectsApi.listProjects.mockResolvedValue([project()]);
   projectsApi.checkProjectHealth.mockResolvedValue({
@@ -457,5 +459,224 @@ describe("项目详情：居中模态弹窗", () => {
     expect(
       within(dialog).getAllByRole("button", { name: "Close" }).length,
     ).toBeGreaterThan(0);
+  });
+});
+
+/** 从列表的「更多操作」菜单打开移除弹窗，返回弹窗容器。 */
+async function openRemoveDialogFromList(title = "移除项目", menuName = "更多操作：项目 A", menuItem = "移除项目") {
+  fireEvent.click(await screen.findByRole("button", { name: menuName }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: menuItem }));
+  const heading = await screen.findByRole("heading", { name: title });
+  return heading.closest('[role="dialog"]') as HTMLElement;
+}
+
+/** 按可访问名称在弹窗内定位内容。 */
+function dialogByHeading(title: string | RegExp): HTMLElement {
+  return screen
+    .getByRole("heading", { name: title })
+    .closest('[role="dialog"]') as HTMLElement;
+}
+
+describe("项目移除：范围选择与二次确认", () => {
+  it("默认选中「仅从 VibeAcross 移除」，确认后仅移除记录", async () => {
+    renderPage();
+
+    const dialog = await openRemoveDialogFromList();
+    const radios = within(dialog).getAllByRole("radio");
+    expect(radios[0]).toBeChecked();
+    expect(radios[1]).not.toBeChecked();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "移除" }));
+
+    await waitFor(() =>
+      expect(projectsApi.removeProject).toHaveBeenCalledWith("proj-a", false),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("heading", { name: "移除项目" }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("取消第一次确认不改动任何数据", async () => {
+    renderPage();
+
+    const dialog = await openRemoveDialogFromList();
+    fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("heading", { name: "移除项目" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(projectsApi.removeProject).not.toHaveBeenCalled();
+  });
+
+  it("选择删除磁盘文件夹需经第二次确认，取消则什么都不做", async () => {
+    renderPage();
+
+    let dialog = await openRemoveDialogFromList();
+    fireEvent.click(
+      within(dialog).getByRole("radio", { name: /同时删除磁盘文件夹/ }),
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "移除" }));
+
+    // 第一次确认后只是切换到二次确认，尚未删除任何内容。
+    expect(projectsApi.removeProject).not.toHaveBeenCalled();
+    dialog = dialogByHeading("确认删除磁盘文件夹？");
+    expect(
+      within(dialog).getByText("C:\\proj-a"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("heading", { name: "确认删除磁盘文件夹？" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(projectsApi.removeProject).not.toHaveBeenCalled();
+  });
+
+  it("完成两次确认后以 deleteFolder=true 移除", async () => {
+    renderPage();
+
+    let dialog = await openRemoveDialogFromList();
+    fireEvent.click(
+      within(dialog).getByRole("radio", { name: /同时删除磁盘文件夹/ }),
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "移除" }));
+
+    dialog = dialogByHeading("确认删除磁盘文件夹？");
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "永久删除并移除" }),
+    );
+
+    await waitFor(() =>
+      expect(projectsApi.removeProject).toHaveBeenCalledWith("proj-a", true),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("heading", { name: "确认删除磁盘文件夹？" }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("删除失败时保留弹窗与记录并显示错误，可重试成功", async () => {
+    projectsApi.removeProject.mockRejectedValueOnce(
+      new Error("删除项目目录失败：拒绝访问"),
+    );
+    renderPage();
+
+    let dialog = await openRemoveDialogFromList();
+    fireEvent.click(
+      within(dialog).getByRole("radio", { name: /同时删除磁盘文件夹/ }),
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "移除" }));
+    dialog = dialogByHeading("确认删除磁盘文件夹？");
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "永久删除并移除" }),
+    );
+
+    expect(
+      await screen.findByText("删除项目目录失败：拒绝访问"),
+    ).toBeInTheDocument();
+    // 弹窗保留、项目记录仍在（列表仍渲染该项目）。
+    expect(
+      screen.getByRole("heading", { name: "确认删除磁盘文件夹？" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "查看项目详情：项目 A" }),
+    ).toBeInTheDocument();
+
+    // 直接重试成功。
+    projectsApi.removeProject.mockResolvedValueOnce(undefined);
+    fireEvent.click(
+      within(dialogByHeading("确认删除磁盘文件夹？")).getByRole("button", {
+        name: "永久删除并移除",
+      }),
+    );
+    await waitFor(() =>
+      expect(projectsApi.removeProject).toHaveBeenCalledTimes(2),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("heading", { name: "确认删除磁盘文件夹？" }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("项目详情入口复用同一弹窗且默认一致，成功后关闭详情", async () => {
+    renderPage();
+
+    const detail = await openDialog();
+    fireEvent.click(within(detail).getByRole("button", { name: "移除项目" }));
+
+    const dialog = dialogByHeading("移除项目");
+    const radios = within(dialog).getAllByRole("radio");
+    expect(radios[0]).toBeChecked();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "移除" }));
+
+    await waitFor(() =>
+      expect(projectsApi.removeProject).toHaveBeenCalledWith("proj-a", false),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("heading", { name: "项目 A" }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("删除范围确认页展示项目名与完整路径", async () => {
+    const longPath =
+      "C:\\Users\\someone\\projects\\" + "a".repeat(80);
+    projectsApi.listProjects.mockResolvedValue([project({ path: longPath })]);
+    renderPage();
+
+    let dialog = await openRemoveDialogFromList();
+    fireEvent.click(
+      within(dialog).getByRole("radio", { name: /同时删除磁盘文件夹/ }),
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "移除" }));
+
+    dialog = dialogByHeading("确认删除磁盘文件夹？");
+    expect(within(dialog).getByText("项目 A")).toBeInTheDocument();
+    expect(within(dialog).getByText(longPath)).toHaveAttribute(
+      "title",
+      longPath,
+    );
+  });
+
+  it("英文界面展示英文选项、警告与确认按钮", async () => {
+    renderPage(<UseLanguage locale="en-US" />);
+
+    const dialog = await openRemoveDialogFromList(
+      "Remove project",
+      "More actions: 项目 A",
+      "Remove project",
+    );
+    expect(
+      within(dialog).getByRole("radio", {
+        name: /Remove from VibeAcross only/,
+      }),
+    ).toBeChecked();
+
+    fireEvent.click(
+      within(dialog).getByRole("radio", {
+        name: /Also delete the folder on disk/,
+      }),
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+
+    const confirmDialog = dialogByHeading("Delete the folder on disk?");
+    expect(
+      within(confirmDialog).getByText(/permanently deleted/),
+    ).toBeInTheDocument();
+    expect(
+      within(confirmDialog).getByRole("button", {
+        name: "Delete folder and remove",
+      }),
+    ).toBeInTheDocument();
   });
 });
