@@ -642,10 +642,57 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   "backup.versionLabel": "Database version",
   "backup.createdLabel": "Created",
 
+  // Diagnostics log
+  "diagnostics.groupTitle": "Diagnostics log",
+  "diagnostics.groupDescription":
+    "View and export the native-session diagnostics log to share when reporting a problem.",
+  "diagnostics.statusLabel": "Log status",
+  "diagnostics.statusDescription": "Current state of the local diagnostics log.",
+  "diagnostics.statusEmpty": "No log yet",
+  "diagnostics.statusPresent": "Log available ({size})",
+  "diagnostics.pathLabel": "Log location",
+  "diagnostics.pathDescription":
+    "Where the diagnostics log is stored on this machine.",
+  "diagnostics.exportLabel": "Export diagnostics log",
+  "diagnostics.exportDescription":
+    "Save the diagnostics log as a .log file so it can be shared.",
+  "diagnostics.exportAction": "Export log",
+  "diagnostics.exporting": "Exporting…",
+  "diagnostics.successTitle": "Export complete",
+  "diagnostics.successBody": "Saved to {name}.",
+  "diagnostics.failedTitle": "Failed to export diagnostics log",
+  "diagnostics.overwriteTitle": "Overwrite existing file?",
+  "diagnostics.overwriteBody": "The file {name} already exists. Overwrite it?",
+  "diagnostics.overwriteConfirm": "Overwrite",
+  "diagnostics.noteTitle": "About the diagnostics log",
+  "diagnostics.note":
+    "The log only records native-session interface probing and requests/responses for troubleshooting. It contains no conversation content and is never uploaded automatically.",
+  "diagnostics.actionsLabel": "Log actions",
+  "diagnostics.actionsDescription": "View, locate, export or clear the diagnostics log.",
+  "diagnostics.viewAction": "View log",
+  "diagnostics.openAction": "Show in folder",
+  "diagnostics.clearAction": "Clear log",
+  "diagnostics.viewFailedTitle": "Failed to read diagnostics log",
+  "diagnostics.openFailedTitle": "Failed to show log location",
+  "diagnostics.clearFailedTitle": "Failed to clear diagnostics log",
+  "diagnostics.clearedTitle": "Cleared",
+  "diagnostics.clearedBody": "The diagnostics log has been cleared.",
+  "diagnostics.refreshAction": "Refresh",
+  "diagnostics.viewerTitle": "Diagnostics log",
+  "diagnostics.viewerDescription": "Most recent log content (up to the last 256 KB).",
+  "diagnostics.viewerLoading": "Loading…",
+  "diagnostics.viewerEmpty": "No log content yet.",
+  "diagnostics.viewerTruncated": "The content is large; only the end is shown.",
+  "diagnostics.clearConfirmTitle": "Clear diagnostics log?",
+  "diagnostics.clearConfirmBody": "This deletes the current log file and cannot be undone.",
+  "diagnostics.clearConfirmAction": "Clear",
+
   // File dialogs
   "dialog.saveBackup": "Save backup file",
   "dialog.pickBackup": "Choose backup file",
   "dialog.backupFilter": "VibeAcross backups",
+  "dialog.saveDiagnostics": "Save diagnostics log",
+  "dialog.diagnosticsFilter": "Diagnostics log",
 
   // Workspace auto restore
   "workspace.autoRestore.fallbackName": "last work context",

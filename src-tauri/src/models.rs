@@ -61,3 +61,29 @@ pub struct StorageInfo {
     pub database_path: String,
     pub app_data_dir: String,
 }
+
+/// 诊断日志文件状态（供设置页展示与导出）。
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosticsInfo {
+    /// 文件绝对路径（查询时为日志文件；导出时为导出的目标文件）。
+    pub path: String,
+    /// 文件是否已存在。
+    pub exists: bool,
+    /// 文件字节数。
+    pub size_bytes: u64,
+}
+
+/// 诊断日志内容（供设置页在应用内查看）。
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosticsContent {
+    /// 日志文件绝对路径。
+    pub path: String,
+    /// 日志正文（必要时仅返回末尾部分）。
+    pub content: String,
+    /// 是否因超出限制而截断。
+    pub truncated: bool,
+    /// 文件完整字节数。
+    pub size_bytes: u64,
+}

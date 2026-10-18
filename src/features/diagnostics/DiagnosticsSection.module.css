@@ -1,0 +1,39 @@
+.note {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.viewerHint {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.logView {
+  max-height: 50vh;
+  margin: 0;
+  padding: var(--space-3);
+  overflow: auto;
+  color: var(--color-text-secondary);
+  background: var(--color-panel-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.pathValue {
+  max-width: 320px;
+  padding: var(--space-1) var(--space-2);
+  color: var(--color-text-secondary);
+  background: var(--color-panel-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  word-break: break-all;
+}

@@ -54,6 +54,35 @@ pub fn open_directory(path: &Path) -> Result<(), AppError> {
     }
 }
 
+/// 在系统文件管理器中定位并选中一个已存在的文件。
+///
+/// 只接受受控路径，并以独立参数形式传给 `explorer`（`/select,<path>`），不拼接 shell 命令。
+pub fn reveal_in_explorer(path: &Path) -> Result<(), AppError> {
+    if !path.exists() {
+        return Err(AppError::new(
+            "PATH_MISSING",
+            format!("文件不存在：{}", path.display()),
+        ));
+    }
+
+    #[cfg(windows)]
+    {
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{}", path.display()))
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map_err(|error| AppError::new("OPEN_FAILED", format!("无法打开文件管理器：{error}")))?;
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        Err(AppError::new("OPEN_UNSUPPORTED", "当前平台暂不支持定位文件。"))
+    }
+}
+
 /// 在系统默认程序中打开一个 http/https 链接。
 ///
 /// 只接受 `http://` / `https://` 开头、且不含空白或控制字符的链接，随后交给系统默认
@@ -106,5 +135,14 @@ mod tests {
     fn open_url_rejects_whitespace_injection() {
         let error = open_url("https://example.com/a b").unwrap_err();
         assert_eq!(error.code, "OPEN_URL_INVALID");
+    }
+
+    #[test]
+    fn reveal_in_explorer_rejects_missing_file() {
+        let missing = std::env::temp_dir().join("vibeacross-definitely-missing-file.log");
+        assert_eq!(
+            reveal_in_explorer(&missing).unwrap_err().code,
+            "PATH_MISSING"
+        );
     }
 }

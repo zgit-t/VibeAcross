@@ -15,6 +15,7 @@ import { SegmentedControl } from "../components/ui/SegmentedControl";
 import { Switch } from "../components/ui/Switch";
 import { Notice } from "../components/ui/Notice";
 import { BackupSection } from "../features/backup/BackupSection";
+import { DiagnosticsSection } from "../features/diagnostics/DiagnosticsSection";
 import { UpdateSettingsSection } from "../features/update/UpdateSettingsSection";
 import { APP_NAME, APP_VERSION } from "../config/app";
 import { pickDirectory } from "../services/dialog";
@@ -332,6 +333,8 @@ export function SettingsPage() {
       </SettingsGroup>
 
       <BackupSection />
+
+      <DiagnosticsSection />
 
       <UpdateSettingsSection />
 

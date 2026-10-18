@@ -68,6 +68,8 @@ interface PickSaveFileOptions {
   title?: string;
   /** 允许扩展名（不含点），例如 ["vibeacross-backup"]。 */
   extensions?: string[];
+  /** 文件类型过滤器显示名；缺省为「VibeAcross 备份」。 */
+  filterName?: string;
 }
 
 /** 打开「另存为」文件对话框，返回所选绝对路径；取消或不可用时返回 null。 */
@@ -83,7 +85,12 @@ export async function pickSaveFile(
     title: options.title ?? t("dialog.saveBackup"),
     defaultPath: options.defaultPath ?? undefined,
     filters: options.extensions
-      ? [{ name: t("dialog.backupFilter"), extensions: options.extensions }]
+      ? [
+          {
+            name: options.filterName ?? t("dialog.backupFilter"),
+            extensions: options.extensions,
+          },
+        ]
       : undefined,
   });
 

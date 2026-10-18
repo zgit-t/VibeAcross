@@ -195,6 +195,28 @@ export interface StorageInfo {
   appDataDir: string;
 }
 
+/** 诊断日志文件状态。与 Rust 后端 `models::DiagnosticsInfo` 对应。 */
+export interface DiagnosticsInfo {
+  /** 文件绝对路径（查询时为日志文件；导出时为导出的目标文件）。 */
+  path: string;
+  /** 文件是否已存在。 */
+  exists: boolean;
+  /** 文件字节数。 */
+  sizeBytes: number;
+}
+
+/** 诊断日志内容（供设置页在应用内查看）。 */
+export interface DiagnosticsContent {
+  /** 日志文件绝对路径。 */
+  path: string;
+  /** 日志正文（必要时仅返回末尾部分）。 */
+  content: string;
+  /** 是否因超出限制而截断。 */
+  truncated: boolean;
+  /** 文件完整字节数。 */
+  sizeBytes: number;
+}
+
 /** 任务状态。与 Rust 后端 `tasks::TaskStatus` 一致。 */
 export type TaskStatus = "todo" | "inProgress" | "done";
 

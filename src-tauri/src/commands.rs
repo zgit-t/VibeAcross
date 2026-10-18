@@ -5,7 +5,8 @@ use crate::health::{self, ProjectHealth};
 use crate::launch::{self, LaunchGuard, LaunchResult, SystemLauncher};
 use crate::shell;
 use crate::models::{
-    AppSettings, CreateProjectInput, ImportProjectInput, Project, StorageInfo,
+    AppSettings, CreateProjectInput, DiagnosticsContent, DiagnosticsInfo, ImportProjectInput,
+    Project, StorageInfo,
 };
 use crate::native::{
     self, DeleteOutcome, DeleteScope, NativeCreateInput, NativeCreateOutcome, NativeSessionInfo,
@@ -215,6 +216,71 @@ pub fn inspect_backup(path: String) -> Result<BackupInfo, AppError> {
 #[tauri::command]
 pub fn restore_backup(db: State<Database>, source_path: String) -> Result<RestoreInfo, AppError> {
     db.restore_from(Path::new(&source_path))
+}
+
+/// 诊断日志文件的当前状态（本地临时目录，便于复现问题时导出给开发者）。
+#[tauri::command]
+pub fn get_diagnostics_info() -> DiagnosticsInfo {
+    let state = crate::native::diagnostics::log_state();
+    DiagnosticsInfo {
+        path: state.path.to_string_lossy().into_owned(),
+        exists: state.exists,
+        size_bytes: state.size_bytes,
+    }
+}
+
+/// 读取诊断日志正文，供设置页在应用内查看（最多返回末尾 256 KB）。
+#[tauri::command]
+pub fn get_diagnostics_content() -> DiagnosticsContent {
+    const LIMIT: usize = 256 * 1024;
+    let log = crate::native::diagnostics::read_tail(LIMIT);
+    DiagnosticsContent {
+        path: log.path.to_string_lossy().into_owned(),
+        content: log.content,
+        truncated: log.truncated,
+        size_bytes: log.size_bytes,
+    }
+}
+
+/// 清空诊断日志（幂等）；返回清空后的状态。
+#[tauri::command]
+pub fn clear_diagnostics() -> Result<DiagnosticsInfo, AppError> {
+    crate::native::diagnostics::clear()?;
+    let state = crate::native::diagnostics::log_state();
+    Ok(DiagnosticsInfo {
+        path: state.path.to_string_lossy().into_owned(),
+        exists: state.exists,
+        size_bytes: state.size_bytes,
+    })
+}
+
+/// 在系统文件管理器中定位诊断日志文件。
+#[tauri::command]
+pub fn open_diagnostics_location() -> Result<(), AppError> {
+    crate::shell::reveal_in_explorer(&crate::native::diagnostics::log_path())
+}
+
+/// 建议的诊断日志导出文件名，供前端「另存为」对话框默认使用。
+#[tauri::command]
+pub fn suggested_diagnostics_file_name() -> String {
+    crate::native::diagnostics::suggested_file_name()
+}
+
+/// 导出诊断日志到用户选择的位置；目标已存在时需 `overwrite` 明确覆盖。
+#[tauri::command]
+pub fn export_diagnostics(
+    target_path: String,
+    overwrite: Option<bool>,
+) -> Result<DiagnosticsInfo, AppError> {
+    let size = crate::native::diagnostics::export_to(
+        Path::new(&target_path),
+        overwrite.unwrap_or(false),
+    )?;
+    Ok(DiagnosticsInfo {
+        path: target_path,
+        exists: true,
+        size_bytes: size,
+    })
 }
 
 #[tauri::command]
