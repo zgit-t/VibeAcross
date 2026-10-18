@@ -22,6 +22,11 @@
 //! 该方法，于是返回 **HTTP 405 Method Not Allowed**——这既不是路径拼写错误，也不是
 //! 「应把 GET 改成 POST」。
 //!
+//! 此外 **v2 默认启用 HTTP Basic 认证**：用户名固定为 `opencode`，口令由服务生成并在
+//! 启动时打印、或取自 `OPENCODE_SERVER_PASSWORD`。未携带凭据时 `/api/*` 会返回 401，
+//! 若将其误判为经典服务并回退到已移除的 `/session`，同样只会得到 405。因此本适配器会在
+//! 启动服务时主动指定口令，并在所有请求上附带认证头（经典版本会忽略该头）。
+//!
 //! 因此本适配器在发起请求前先据实判断服务接口，而不是盲目轮换路径或方法：
 //!
 //!  1. `GET /api/info`（v2 的 ServerInfo，含 `version`）：命中即认定为 **v2 服务**，
@@ -49,14 +54,19 @@ const LIST_TIMEOUT: Duration = Duration::from_secs(25);
 /// 在临时服务上执行一段操作，结束后可靠终止服务。
 fn with_server<T>(
     ctx: &ToolContext,
-    run: impl FnOnce(u16) -> Result<T, AppError>,
+    run: impl FnOnce(u16, Option<&str>) -> Result<T, AppError>,
 ) -> Result<T, AppError> {
     diagnostics::log(&format!(
         "===== 新会话操作开始（VibeAcross {}）=====",
         env!("CARGO_PKG_VERSION")
     ));
     let mut serve = server::start(&ctx.executable, &ctx.working_dir)?;
-    let outcome = run(serve.port);
+    // OpenCode v2 的 `/api/*` 需要 HTTP Basic 认证；经典版本忽略该头。
+    let authorization = serve
+        .password
+        .as_deref()
+        .map(|password| http::basic_authorization("opencode", password));
+    let outcome = run(serve.port, authorization.as_deref());
     serve.terminate();
     outcome
 }
@@ -133,8 +143,18 @@ impl SessionRoutes {
 ///
 /// 返回 `Ok(Some)` 表示已确定接口；`Ok(None)` 表示文档可用但未提供任何会话创建接口；
 /// `Err` 表示文档不可读取 / 无法解析（调用方据此改用其它证据）。
-fn discover_routes_from_doc(port: u16) -> Result<Option<SessionRoutes>, AppError> {
-    let response = http::request("127.0.0.1", port, "GET", "/doc", None)?;
+fn discover_routes_from_doc(
+    port: u16,
+    authorization: Option<&str>,
+) -> Result<Option<SessionRoutes>, AppError> {
+    let response = http::request(
+        "127.0.0.1",
+        port,
+        "GET",
+        "/doc",
+        None,
+        authorization,
+    )?;
     if !(200..300).contains(&response.status) {
         diagnostics::log(&format!(
             "读取文档：GET /doc -> HTTP {}；body={}",
@@ -197,21 +217,42 @@ fn discover_routes_from_doc(port: u16) -> Result<Option<SessionRoutes>, AppError
     Ok(None)
 }
 
+/// `GET /api/info` 探测结果。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum V2Probe {
+    /// 命中 v2（返回含 `version` 的 ServerInfo）。
+    Yes,
+    /// 明确不是 v2（如经典版本返回 404 / 405）。
+    No,
+    /// 端点存在但要求认证（v2 且凭据缺失或未被接受）。
+    Unauthorized,
+}
+
 /// 探测服务是否为 OpenCode v2。
 ///
 /// v2 的会话 REST 接口整体迁移到 `/api/...`，并新增 `GET /api/info`（返回含 `version`
 /// 的 `ServerInfo`）；经典 `/session` 接口在该版本上已被移除。因此 `/api/info` 是区分
 /// 「v2 服务」与「经典服务」的可靠依据，且不依赖 `opencode --version` 的字符串输出。
 /// 经典 1.19.3 并不提供 `/api/info`（其仅有 `/global/health` 与 `/api/health`），故不会误判。
-fn detect_v2_server(port: u16) -> bool {
-    let response = match http::request("127.0.0.1", port, "GET", "/api/info", None) {
+///
+/// v2 默认开启 HTTP Basic 认证：若返回 401，说明端点存在但凭据未被接受，需据此给出
+/// 明确的认证诊断，而不是误判为经典服务后回退到已移除的 `/session`（那样只会得到 405）。
+fn detect_v2_server(port: u16, authorization: Option<&str>) -> V2Probe {
+    let response = match http::request(
+        "127.0.0.1",
+        port,
+        "GET",
+        "/api/info",
+        None,
+        authorization,
+    ) {
         Ok(response) => response,
         Err(error) => {
             diagnostics::log(&format!(
                 "探测 v2：GET /api/info 请求失败 -> [{}] {}",
                 error.code, error.message
             ));
-            return false;
+            return V2Probe::No;
         }
     };
     let version = serde_json::from_str::<Value>(&response.body)
@@ -228,7 +269,13 @@ fn detect_v2_server(port: u16) -> bool {
         version,
         diagnostics::summary(&response.body, 300)
     ));
-    (200..300).contains(&response.status) && version.is_some()
+    if (200..300).contains(&response.status) && version.is_some() {
+        V2Probe::Yes
+    } else if response.status == 401 || response.status == 403 {
+        V2Probe::Unauthorized
+    } else {
+        V2Probe::No
+    }
 }
 
 /// 解析本次要使用的会话接口。
@@ -236,15 +283,29 @@ fn detect_v2_server(port: u16) -> bool {
 /// 顺序：
 ///  1. `GET /api/info` 命中即认定为 v2，直接使用 `/api/session`——避免 v2 服务（若其
 ///     文档仍残留经典路径）被误判为经典接口，从而对已移除的 `/session` 发起请求得到 405；
-///  2. 否则读取服务自带的 OpenAPI 文档（`GET /doc`）据实选择经典 / v2 接口；
-///  3. 文档明确可用但没有会话创建接口时，如实报错；
-///  4. 文档不可用（旧版本或非 JSON 文档）时保守回退经典接口，保持既有版本行为不变。
-fn resolve_routes(port: u16) -> Result<SessionRoutes, AppError> {
-    if detect_v2_server(port) {
-        diagnostics::log("接口判定：命中 /api/info，使用 v2 接口（/api/session）");
-        return Ok(SessionRoutes::v2());
+///  2. `/api/info` 要求认证（401/403）时，如实报认证失败——这类服务就是 v2，回退经典
+///     接口只会得到 405，掩盖真实原因；
+///  3. 否则读取服务自带的 OpenAPI 文档（`GET /doc`）据实选择经典 / v2 接口；
+///  4. 文档明确可用但没有会话创建接口时，如实报错；
+///  5. 文档不可用（旧版本或文档非 JSON）时保守回退经典接口，保持既有版本行为不变。
+fn resolve_routes(port: u16, authorization: Option<&str>) -> Result<SessionRoutes, AppError> {
+    match detect_v2_server(port, authorization) {
+        V2Probe::Yes => {
+            diagnostics::log("接口判定：命中 /api/info，使用 v2 接口（/api/session）");
+            return Ok(SessionRoutes::v2());
+        }
+        V2Probe::Unauthorized => {
+            diagnostics::log(
+                "接口判定：/api/info 要求认证（HTTP 401/403）-> NATIVE_AUTH_FAILED",
+            );
+            return Err(AppError::new(
+                "NATIVE_AUTH_FAILED",
+                "OpenCode 服务要求身份验证，但当前凭据未被接受。该服务为 v2，请确认 OpenCode 版本与口令设置。",
+            ));
+        }
+        V2Probe::No => {}
     }
-    match discover_routes_from_doc(port) {
+    match discover_routes_from_doc(port, authorization) {
         Ok(Some(routes)) => {
             diagnostics::log(&format!("接口判定：依据 /doc 使用 {}", routes.label()));
             Ok(routes)
@@ -270,13 +331,18 @@ fn resolve_routes(port: u16) -> Result<SessionRoutes, AppError> {
 
 /// 在项目目录下创建一个原生会话。
 pub fn create(ctx: &ToolContext, title: Option<&str>) -> Result<NativeSessionInfo, AppError> {
-    with_server(ctx, |port| {
-        create_at(port, &ctx.working_dir.to_string_lossy(), title)
+    with_server(ctx, |port, authorization| {
+        create_at(port, authorization, &ctx.working_dir.to_string_lossy(), title)
     })
 }
 
-fn create_at(port: u16, working_dir: &str, title: Option<&str>) -> Result<NativeSessionInfo, AppError> {
-    let routes = resolve_routes(port)?;
+fn create_at(
+    port: u16,
+    authorization: Option<&str>,
+    working_dir: &str,
+    title: Option<&str>,
+) -> Result<NativeSessionInfo, AppError> {
+    let routes = resolve_routes(port, authorization)?;
     if !routes.create {
         return Err(AppError::new(
             "NATIVE_API_UNSUPPORTED",
@@ -290,7 +356,7 @@ fn create_at(port: u16, working_dir: &str, title: Option<&str>) -> Result<Native
         "创建会话：目录={working_dir}；{label}；POST {path}；body={body}",
         label = routes.label()
     ));
-    let response = http::request("127.0.0.1", port, "POST", &path, Some(&body))?;
+    let response = http::request("127.0.0.1", port, "POST", &path, Some(&body), authorization)?;
     diagnostics::log(&format!(
         "创建会话响应：HTTP {}；body={}",
         response.status,
@@ -405,17 +471,23 @@ pub fn list_with_state(ctx: &ToolContext) -> Result<HistoryListing, AppError> {
 
 /// 查询单个原生会话；不存在或不属于当前项目目录时返回 `None`。
 pub fn get(ctx: &ToolContext, native_id: &str) -> Result<Option<NativeSessionInfo>, AppError> {
-    with_server(ctx, |port| {
-        get_at(port, &ctx.working_dir.to_string_lossy(), native_id)
+    with_server(ctx, |port, authorization| {
+        get_at(
+            port,
+            authorization,
+            &ctx.working_dir.to_string_lossy(),
+            native_id,
+        )
     })
 }
 
 fn get_at(
     port: u16,
+    authorization: Option<&str>,
     working_dir: &str,
     native_id: &str,
 ) -> Result<Option<NativeSessionInfo>, AppError> {
-    let routes = resolve_routes(port)?;
+    let routes = resolve_routes(port, authorization)?;
     if !routes.get {
         return Err(AppError::new(
             "NATIVE_API_UNSUPPORTED",
@@ -423,7 +495,7 @@ fn get_at(
         ));
     }
     let path = routes.session_path(native_id);
-    let response = http::request("127.0.0.1", port, "GET", &path, None)?;
+    let response = http::request("127.0.0.1", port, "GET", &path, None, authorization)?;
     if response.status == 404 {
         return Ok(None);
     }
@@ -446,11 +518,18 @@ fn get_at(
 
 /// 修改原生会话标题（仅标题，不触碰任何对话内容）。
 pub fn rename_title(ctx: &ToolContext, native_id: &str, title: &str) -> Result<(), AppError> {
-    with_server(ctx, |port| rename_at(port, native_id, title))
+    with_server(ctx, |port, authorization| {
+        rename_at(port, authorization, native_id, title)
+    })
 }
 
-fn rename_at(port: u16, native_id: &str, title: &str) -> Result<(), AppError> {
-    let routes = resolve_routes(port)?;
+fn rename_at(
+    port: u16,
+    authorization: Option<&str>,
+    native_id: &str,
+    title: &str,
+) -> Result<(), AppError> {
+    let routes = resolve_routes(port, authorization)?;
     if !routes.rename {
         return Err(AppError::new(
             "NATIVE_API_UNSUPPORTED",
@@ -459,7 +538,7 @@ fn rename_at(port: u16, native_id: &str, title: &str) -> Result<(), AppError> {
     }
     let path = routes.session_path(native_id);
     let body = serde_json::json!({ "title": title }).to_string();
-    let response = http::request("127.0.0.1", port, "PATCH", &path, Some(&body))?;
+    let response = http::request("127.0.0.1", port, "PATCH", &path, Some(&body), authorization)?;
     if !(200..300).contains(&response.status) {
         return Err(http_failure(
             "NATIVE_RENAME_FAILED",
@@ -474,11 +553,17 @@ fn rename_at(port: u16, native_id: &str, title: &str) -> Result<(), AppError> {
 
 /// 删除原生会话。仅用于补偿「会话已创建但未能保存关联」的回滚场景。
 pub fn delete(ctx: &ToolContext, native_id: &str) -> Result<(), AppError> {
-    with_server(ctx, |port| delete_at(port, native_id))
+    with_server(ctx, |port, authorization| {
+        delete_at(port, authorization, native_id)
+    })
 }
 
-fn delete_at(port: u16, native_id: &str) -> Result<(), AppError> {
-    let routes = resolve_routes(port)?;
+fn delete_at(
+    port: u16,
+    authorization: Option<&str>,
+    native_id: &str,
+) -> Result<(), AppError> {
+    let routes = resolve_routes(port, authorization)?;
     if !routes.delete {
         return Err(AppError::new(
             "NATIVE_API_UNSUPPORTED",
@@ -486,7 +571,7 @@ fn delete_at(port: u16, native_id: &str) -> Result<(), AppError> {
         ));
     }
     let path = routes.session_path(native_id);
-    let response = http::request("127.0.0.1", port, "DELETE", &path, None)?;
+    let response = http::request("127.0.0.1", port, "DELETE", &path, None, authorization)?;
     if response.status == 404 {
         return Ok(());
     }
@@ -656,6 +741,7 @@ mod tests {
         method: String,
         path: String,
         body: String,
+        authorization: Option<String>,
     }
 
     type Handler = Box<dyn Fn(&str, &str, &str) -> (u16, Vec<(String, String)>, String) + Send + Sync>;
@@ -679,13 +765,14 @@ mod tests {
             thread::spawn(move || {
                 for stream in listener.incoming() {
                     let Ok(stream) = stream else { continue };
-                    let Ok((method, path, body)) = read_request(&stream) else {
+                    let Ok((method, path, body, authorization)) = read_request(&stream) else {
                         continue;
                     };
                     sink.lock().unwrap().push(Recorded {
                         method: method.clone(),
                         path: path.clone(),
                         body: body.clone(),
+                        authorization,
                     });
                     let (status, headers, response_body) = handler(&method, &path, &body);
                     let _ = write_response(stream, status, &headers, &response_body);
@@ -708,7 +795,7 @@ mod tests {
         }
     }
 
-    fn read_request(stream: &TcpStream) -> std::io::Result<(String, String, String)> {
+    fn read_request(stream: &TcpStream) -> std::io::Result<(String, String, String, Option<String>)> {
         let mut reader = BufReader::new(stream.try_clone()?);
         let mut request_line = String::new();
         reader.read_line(&mut request_line)?;
@@ -716,6 +803,7 @@ mod tests {
         let method = parts.next().unwrap_or("").to_string();
         let path = parts.next().unwrap_or("").to_string();
         let mut content_length = 0usize;
+        let mut authorization = None;
         loop {
             let mut line = String::new();
             if reader.read_line(&mut line)? == 0 || line.trim().is_empty() {
@@ -724,6 +812,8 @@ mod tests {
             if let Some((name, value)) = line.split_once(':') {
                 if name.trim().eq_ignore_ascii_case("content-length") {
                     content_length = value.trim().parse().unwrap_or(0);
+                } else if name.trim().eq_ignore_ascii_case("authorization") {
+                    authorization = Some(value.trim().to_string());
                 }
             }
         }
@@ -731,7 +821,12 @@ mod tests {
         if content_length > 0 {
             reader.read_exact(&mut body)?;
         }
-        Ok((method, path, String::from_utf8_lossy(&body).into_owned()))
+        Ok((
+            method,
+            path,
+            String::from_utf8_lossy(&body).into_owned(),
+            authorization,
+        ))
     }
 
     fn write_response(
@@ -798,7 +893,7 @@ mod tests {
             (500, vec![], "unexpected".to_string())
         });
 
-        let info = create_at(server.port, r"C:\proj", Some("标题")).unwrap();
+        let info = create_at(server.port, None, r"C:\proj", Some("标题")).unwrap();
         assert_eq!(info.native_id, "ses_classic");
 
         let request = server.last();
@@ -830,7 +925,7 @@ mod tests {
             (405, vec![("Allow".to_string(), "GET".to_string())], "nope".to_string())
         });
 
-        let info = create_at(server.port, r"C:\proj", None).unwrap();
+        let info = create_at(server.port, None, r"C:\proj", None).unwrap();
         assert_eq!(info.native_id, "ses_v2");
         assert_eq!(info.directory.as_deref(), Some(r"C:\proj"));
         assert_eq!(server.last().path, "/api/session");
@@ -850,7 +945,7 @@ mod tests {
             )
         });
 
-        let error = create_at(server.port, r"C:\proj", None).unwrap_err();
+        let error = create_at(server.port, None, r"C:\proj", None).unwrap_err();
         assert_eq!(error.code, "NATIVE_CREATE_FAILED");
         assert!(error.message.contains("405"), "{}", error.message);
         assert!(error.message.contains("POST /session"), "{}", error.message);
@@ -879,7 +974,7 @@ mod tests {
             (500, vec![], "unexpected".to_string())
         });
 
-        let info = create_at(server.port, r"C:\proj", None).unwrap();
+        let info = create_at(server.port, None, r"C:\proj", None).unwrap();
         assert_eq!(info.native_id, "ses_fallback");
     }
 
@@ -893,7 +988,7 @@ mod tests {
             (200, vec![], "{}".to_string())
         });
 
-        let error = create_at(server.port, r"C:\proj", None).unwrap_err();
+        let error = create_at(server.port, None, r"C:\proj", None).unwrap_err();
         assert_eq!(error.code, "NATIVE_API_UNSUPPORTED");
     }
 
@@ -921,9 +1016,9 @@ mod tests {
             (500, vec![], "unexpected".to_string())
         });
 
-        assert!(get_at(server.port, r"C:\proj", "ses_x").unwrap().is_some());
-        assert!(rename_at(server.port, "ses_x", "新标题").is_ok());
-        assert!(delete_at(server.port, "ses_x").is_ok());
+        assert!(get_at(server.port, None, r"C:\proj", "ses_x").unwrap().is_some());
+        assert!(rename_at(server.port, None, "ses_x", "新标题").is_ok());
+        assert!(delete_at(server.port, None, "ses_x").is_ok());
     }
 
     #[test]
@@ -1014,7 +1109,7 @@ mod tests {
             (405, vec![("Allow".to_string(), "GET".to_string())], "nope".to_string())
         });
 
-        let info = create_at(server.port, r"D:\test", None).unwrap();
+        let info = create_at(server.port, None, r"D:\test", None).unwrap();
         assert_eq!(info.native_id, "ses_classic");
         assert!(
             server.last().path.starts_with("/session?directory=D%3A%5Ctest"),
@@ -1043,7 +1138,7 @@ mod tests {
             (405, vec![("Allow".to_string(), "GET".to_string())], "Method Not Allowed".to_string())
         });
 
-        let info = create_at(server.port, r"D:\test", Some("标题")).unwrap();
+        let info = create_at(server.port, None, r"D:\test", Some("标题")).unwrap();
         assert_eq!(info.native_id, "ses_v2");
         assert_eq!(info.directory.as_deref(), Some(r"D:\test"));
 
@@ -1081,7 +1176,7 @@ mod tests {
             (500, vec![], "unexpected".to_string())
         });
 
-        let info = create_at(server.port, r"D:\test", None).unwrap();
+        let info = create_at(server.port, None, r"D:\test", None).unwrap();
         assert_eq!(info.native_id, "ses_v2");
     }
 
@@ -1102,7 +1197,7 @@ mod tests {
             (500, vec![], "unexpected".to_string())
         });
 
-        let error = create_at(server.port, r"D:\test", None).unwrap_err();
+        let error = create_at(server.port, None, r"D:\test", None).unwrap_err();
         assert_eq!(error.code, "NATIVE_CREATE_FAILED");
         assert!(error.message.contains("POST /api/session"), "{}", error.message);
         assert!(error.message.contains("405"), "{}", error.message);
@@ -1139,9 +1234,9 @@ mod tests {
             (405, vec![("Allow".to_string(), "GET".to_string())], "nope".to_string())
         });
 
-        assert!(get_at(server.port, r"C:\proj", "ses_x").unwrap().is_some());
-        assert!(rename_at(server.port, "ses_x", "新标题").is_ok());
-        assert!(delete_at(server.port, "ses_x").is_ok());
+        assert!(get_at(server.port, None, r"C:\proj", "ses_x").unwrap().is_some());
+        assert!(rename_at(server.port, None, "ses_x", "新标题").is_ok());
+        assert!(delete_at(server.port, None, "ses_x").is_ok());
     }
 
     #[test]
@@ -1162,7 +1257,7 @@ mod tests {
             (500, vec![], "unexpected".to_string())
         });
 
-        let error = create_at(server.port, r"D:\test", None).unwrap_err();
+        let error = create_at(server.port, None, r"D:\test", None).unwrap_err();
         assert_eq!(error.code, "NATIVE_CREATE_FAILED");
         assert!(error.message.contains("D:\\test") || error.message.contains(r"D:\test"));
     }
@@ -1178,5 +1273,100 @@ mod tests {
         assert_eq!(info.native_id, "ses_f");
         assert!(info.created_at.is_some());
         assert!(info.updated_at.is_some());
+    }
+
+    // ---- OpenCode v2 HTTP Basic 认证 ----
+
+    #[test]
+    fn attaches_basic_authorization_to_api_requests() {
+        // v2 需要认证：/api/info 命中后，创建请求必须携带同一 Authorization 头。
+        let info_body = v2_info();
+        let server = MockServer::start(move |method, path, _body| {
+            if method == "GET" && path == "/api/info" {
+                return (200, vec![], info_body.clone());
+            }
+            if method == "POST" && path == "/api/session" {
+                return (
+                    200,
+                    vec![],
+                    r#"{"data":{"id":"ses_v2","location":{"directory":"D:\\test"},"time":{"created":1,"updated":2}}}"#
+                        .to_string(),
+                );
+            }
+            (500, vec![], "unexpected".to_string())
+        });
+
+        let authorization = http::basic_authorization("opencode", "secret");
+        let info = create_at(server.port, Some(&authorization), r"D:\test", None).unwrap();
+        assert_eq!(info.native_id, "ses_v2");
+
+        let recorded = server.all();
+        let probe = recorded
+            .iter()
+            .find(|record| record.path == "/api/info")
+            .expect("应探测 /api/info");
+        assert_eq!(probe.authorization.as_deref(), Some(authorization.as_str()));
+        let create = recorded
+            .iter()
+            .find(|record| record.path == "/api/session")
+            .expect("应创建会话");
+        assert_eq!(
+            create.authorization.as_deref(),
+            Some(authorization.as_str()),
+            "创建请求必须携带认证头"
+        );
+    }
+
+    #[test]
+    fn reports_auth_failure_when_v2_rejects_credentials() {
+        // v2 服务存在但凭据被拒（401）时，应如实报认证失败，而不是回退经典接口得到 405。
+        let server = MockServer::start(|_method, path, _body| {
+            if path == "/api/info" {
+                return (
+                    401,
+                    vec![],
+                    r#"{"_tag":"UnauthorizedError","message":"Authentication required"}"#
+                        .to_string(),
+                );
+            }
+            (405, vec![("Allow".to_string(), "GET".to_string())], "nope".to_string())
+        });
+
+        let error = create_at(server.port, None, r"D:\test", None).unwrap_err();
+        assert_eq!(error.code, "NATIVE_AUTH_FAILED");
+        // 认证失败后不得再对已移除的经典 /session 发起创建请求。
+        let creates = server
+            .all()
+            .into_iter()
+            .filter(|record| record.method == "POST")
+            .count();
+        assert_eq!(creates, 0, "认证失败后不得尝试创建会话");
+    }
+
+    #[test]
+    fn classic_server_is_unaffected_by_authorization_header() {
+        // 经典 1.19.3 无 /api/info（404），忽略 Authorization 头，仍走经典接口。
+        let doc = classic_doc();
+        let server = MockServer::start(move |method, path, _body| {
+            if method == "GET" && path == "/api/info" {
+                return (404, vec![], String::new());
+            }
+            if method == "GET" && path == "/doc" {
+                return (200, vec![], doc.clone());
+            }
+            if method == "POST" && path.starts_with("/session?directory=") {
+                return (
+                    200,
+                    vec![],
+                    r#"{"id":"ses_classic","directory":"D:\\test","time":{"created":1,"updated":2}}"#
+                        .to_string(),
+                );
+            }
+            (405, vec![("Allow".to_string(), "GET".to_string())], "nope".to_string())
+        });
+
+        let authorization = http::basic_authorization("opencode", "whatever");
+        let info = create_at(server.port, Some(&authorization), r"D:\test", None).unwrap();
+        assert_eq!(info.native_id, "ses_classic");
     }
 }

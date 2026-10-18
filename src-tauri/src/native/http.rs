@@ -31,15 +31,52 @@ impl HttpResponse {
     }
 }
 
+/// 构造 HTTP Basic 认证头的取值（`Basic <base64(user:pass)>`）。
+///
+/// OpenCode v2 的 `serve` 默认启用 HTTP Basic 认证，用户名固定为 `opencode`，
+/// 口令由服务生成或取自 `OPENCODE_SERVER_PASSWORD`。经典版本忽略该头，因此始终
+/// 附带也不会影响其行为。
+pub fn basic_authorization(username: &str, password: &str) -> String {
+    let raw = format!("{username}:{password}");
+    format!("Basic {}", base64_encode(raw.as_bytes()))
+}
+
+/// 标准 Base64 编码（仅本用途，无需填充之外的解码能力）。
+fn base64_encode(input: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
+    for chunk in input.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = *chunk.get(1).unwrap_or(&0) as u32;
+        let b2 = *chunk.get(2).unwrap_or(&0) as u32;
+        let triplet = (b0 << 16) | (b1 << 8) | b2;
+        out.push(TABLE[((triplet >> 18) & 0x3F) as usize] as char);
+        out.push(TABLE[((triplet >> 12) & 0x3F) as usize] as char);
+        if chunk.len() > 1 {
+            out.push(TABLE[((triplet >> 6) & 0x3F) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(TABLE[(triplet & 0x3F) as usize] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
+}
+
 /// 向本机回环地址发起一次 HTTP 请求。
 ///
 /// `path` 必须包含查询串（如 `/session?directory=...`），由调用方负责编码。
+/// `authorization` 为可选的 `Authorization` 头取值（见 [`basic_authorization`]）。
 pub fn request(
     host: &str,
     port: u16,
     method: &str,
     path: &str,
     body: Option<&str>,
+    authorization: Option<&str>,
 ) -> Result<HttpResponse, AppError> {
     if host != "127.0.0.1" && host != "localhost" {
         return Err(AppError::new(
@@ -66,6 +103,9 @@ pub fn request(
     payload.push_str(&format!("Host: {host}:{port}\r\n"));
     payload.push_str("Accept: application/json\r\n");
     payload.push_str("Connection: close\r\n");
+    if let Some(value) = authorization {
+        payload.push_str(&format!("Authorization: {value}\r\n"));
+    }
     if let Some(body) = body {
         payload.push_str("Content-Type: application/json\r\n");
         payload.push_str(&format!("Content-Length: {}\r\n", body.len()));
@@ -235,5 +275,24 @@ mod tests {
     #[test]
     fn rejects_invalid_status_line() {
         assert!(parse_response("garbage").is_err());
+    }
+
+    #[test]
+    fn encodes_base64_with_padding() {
+        assert_eq!(base64_encode(b""), "");
+        assert_eq!(base64_encode(b"f"), "Zg==");
+        assert_eq!(base64_encode(b"fo"), "Zm8=");
+        assert_eq!(base64_encode(b"foo"), "Zm9v");
+        assert_eq!(base64_encode(b"foob"), "Zm9vYg==");
+        assert_eq!(base64_encode(b"fooba"), "Zm9vYmE=");
+        assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
+    }
+
+    #[test]
+    fn builds_basic_authorization_header() {
+        assert_eq!(
+            basic_authorization("opencode", "secret"),
+            "Basic b3BlbmNvZGU6c2VjcmV0"
+        );
     }
 }
