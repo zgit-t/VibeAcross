@@ -4,28 +4,9 @@ import { toErrorMessage } from "../../services/backend";
 import { listSessions } from "../../services/sessions";
 import { t } from "../../i18n/translate";
 import type { AiSession } from "../../types/domain";
+import { compareSessionsByActivity } from "./center";
 
-/** 会话的最近活动时间：优先使用真实的「上次使用」时间，其次为更新时间。 */
-export function sessionActivityTime(session: AiSession): string {
-  return session.lastUsedAt ?? session.updatedAt;
-}
-
-/**
- * 按最近活动时间倒序排列。
- *
- * 优先比较真实时间戳（`lastUsedAt ?? updatedAt`），完全相同时再以更新时间、
- * 最后以 id 兜底，保证排序稳定、可复现，绝不臆造时间。
- */
-export function compareSessionsByActivity(a: AiSession, b: AiSession): number {
-  const byActivity = sessionActivityTime(b).localeCompare(
-    sessionActivityTime(a),
-  );
-  if (byActivity !== 0) {
-    return byActivity;
-  }
-  const byUpdated = b.updatedAt.localeCompare(a.updatedAt);
-  return byUpdated !== 0 ? byUpdated : a.id.localeCompare(b.id);
-}
+export { sessionActivityTime, compareSessionsByActivity } from "./center";
 
 export interface RecentSessionsResult {
   /** 按最近活动时间排序、截断后的会话记录。 */
@@ -43,7 +24,7 @@ export interface RecentSessionsResult {
  * 不新增任何存储。数据版本号变化（如新建 / 恢复会话、项目变更）时自动刷新，
  * 以保证展示的是真实、最新的记录。
  */
-export function useRecentSessions(limit = 5): RecentSessionsResult {
+export function useRecentSessions(limit: number | null = 5): RecentSessionsResult {
   const { revision, desktopAvailable } = useRevision();
   const [all, setAll] = useState<AiSession[]>([]);
   const [loading, setLoading] = useState(desktopAvailable);
@@ -88,10 +69,10 @@ export function useRecentSessions(limit = 5): RecentSessionsResult {
     };
   }, [desktopAvailable, revision, reloadToken]);
 
-  const sessions = useMemo(
-    () => [...all].sort(compareSessionsByActivity).slice(0, Math.max(0, limit)),
-    [all, limit],
-  );
+  const sessions = useMemo(() => {
+    const sorted = [...all].sort(compareSessionsByActivity);
+    return limit === null ? sorted : sorted.slice(0, Math.max(0, limit));
+  }, [all, limit]);
 
   const reload = useCallback(() => setReloadToken((value) => value + 1), []);
 

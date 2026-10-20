@@ -158,6 +158,8 @@ export const zhCN = {
     "该会话所属项目已被移除，无法打开。",
   "overview.recentSessions.reasonPathMissing":
     "项目目录不存在或不可访问，无法打开该会话。",
+  "overview.recentSessions.reasonNativeDeleted":
+    "该会话的原生会话已删除，无法恢复。",
   "overview.recentSessions.reasonNoNativeId":
     "该会话没有可用的原生会话标识，无法直接打开。",
   "overview.recentSessions.reasonToolUnavailable":
@@ -231,6 +233,8 @@ export const zhCN = {
   "removeProject.folderConfirmHint":
     "只有磁盘删除成功，项目记录才会从 VibeAcross 中移除；若删除失败，记录会保留，可重试。",
   "removeProject.folderConfirmLabel": "永久删除并移除",
+  "removeProject.nativeNote":
+    "注意：AI 工具（如 Claude Code、OpenCode）中已有的原生会话不会被删除，仍保留在工具内。若之后在同一路径重新创建同名项目，VibeAcross 会把它视为新项目，不会自动重新关联这些旧会话。",
 
   // 项目列表
   "projectList.noTool": "未选择工具",
@@ -278,8 +282,6 @@ export const zhCN = {
   "addProject.errLocation": "请选择项目所在目录。",
   "addProject.errPath": "请选择要导入的目录。",
   "addProject.failed": "添加项目失败。",
-
-  // 项目详情页
   "projectDetail.title": "项目详情",
   "projectDetail.back": "返回项目列表",
   "projectDetail.openFolder": "打开文件夹",
@@ -540,6 +542,42 @@ export const zhCN = {
   "sessions.emptyTitle": "还没有保存的工作上下文",
   "sessions.emptyDescription":
     "保存一个「项目 + 工具 + 任务」组合，之后即可一键恢复工作环境。",
+
+  // 会话中心（集中管理各项目 / 各 AI 工具的会话）
+  "sessionCenter.title": "会话",
+  "sessionCenter.description": "跨项目、跨工具集中查看和管理 AI 会话。",
+  "sessionCenter.refresh": "刷新",
+  "sessionCenter.refreshing": "刷新中…",
+  "sessionCenter.searchLabel": "搜索会话",
+  "sessionCenter.searchPlaceholder": "搜索会话、项目或工具",
+  "sessionCenter.projectFilterLabel": "按项目筛选",
+  "sessionCenter.toolFilterLabel": "按工具筛选",
+  "sessionCenter.allProjects": "全部项目",
+  "sessionCenter.allTools": "全部工具",
+  "sessionCenter.sortLabel": "排序方式",
+  "sessionCenter.sortActivity": "最近活动",
+  "sessionCenter.sortName": "名称",
+  "sessionCenter.count": "共 {count} 条会话",
+  "sessionCenter.unnamed": "未命名会话",
+  "sessionCenter.projectUnknown": "未知项目",
+  "sessionCenter.toolUnknown": "未知工具",
+  "sessionCenter.loading": "正在读取会话…",
+  "sessionCenter.emptyTitle": "还没有会话记录",
+  "sessionCenter.emptyDescription":
+    "在项目中使用 AI 工具运行会话后，会在这里集中显示。",
+  "sessionCenter.noMatchTitle": "没有匹配的会话",
+  "sessionCenter.noMatchDescription": "请调整搜索关键词或筛选条件。",
+  "sessionCenter.openProject": "打开项目",
+  "sessionCenter.openingProject": "正在打开…",
+  "sessionCenter.opened": "已打开会话「{name}」",
+  "sessionCenter.openProjectSuccess": "已在项目目录中打开「{tool}」。",
+  "sessionCenter.openFailed": "打开会话失败。",
+  "sessionCenter.openProjectFailed": "打开项目失败。",
+  "sessionCenter.nativeDeletedHint":
+    "该会话的原生会话已删除，无法恢复；可清理本地记录。",
+  "sessionCenter.renameTitle": "重命名会话",
+  "sessionCenter.refreshPartial":
+    "已重新读取会话，但有 {count} 个工具的原生会话同步失败，展示的可能不是最新数据。",
 
   // 恢复能力
   "restoreLevel.none": "不支持恢复",
@@ -836,6 +874,9 @@ export const zhCN = {
   "aiSession.historyStateStructureUnsupportedDesc":
     "该工具的历史以非公开或加密结构存储，VibeAcross 目前无法安全解析，因此不列出任何会话。",
   "aiSession.loading": "正在读取会话…",
+  "aiSession.skippedNoticeTitle": "部分历史会话未纳入本项目",
+  "aiSession.skippedNoticeBody":
+    "有 {count} 条历史会话原属于已被移除的项目。为避免在相同路径重建项目时把它们误认作本项目会话，VibeAcross 不会自动纳入这些会话；它们仍保留在工具中，可在工具内直接查看。",
   "aiSession.emptyTitle": "还没有历史会话",
   "aiSession.emptyDescription":
     "为该工具创建一个新会话，或直接在工具中开始对话。",
@@ -861,10 +902,15 @@ export const zhCN = {
     "仅在工具支持时可用；默认只修改 VibeAcross 中的显示名称。",
   "aiSession.localOnlyNote":
     "重命名默认只修改 VibeAcross 中的显示名称，不会改变工具中的标题。",
-  "aiSession.delete": "删除会话",
+  "aiSession.nativeDeletedRenameHint":
+    "该会话的原生会话已删除，无法同步修改工具中的标题；仍可修改本地显示名称。",
   "aiSession.deleteTitle": "删除会话",
   "aiSession.deleteConfirmName": "确定要删除会话「{name}」吗？",
   "aiSession.deleteContext": "所属项目：{project}；AI 工具：{tool}。",
+  "aiSession.deleteContextProject": "项目",
+  "aiSession.deleteContextTool": "工具",
+  "aiSession.deleteContextSession": "会话",
+  "aiSession.deleteContextScope": "删除范围",
   "aiSession.deleteScopeLabel": "选择删除范围",
   "aiSession.deleteScopeLocal": "仅删除 VibeAcross 中的记录",
   "aiSession.deleteScopeLocalDesc":
@@ -881,20 +927,33 @@ export const zhCN = {
   "aiSession.deleteScopeNoNativeId":
     "该会话没有原生会话标识，无法定位并删除工具中的会话。",
   "aiSession.deleteScopeNativeUnsupported": "{tool} 暂不支持删除原生会话。",
+  "aiSession.deleteScopeNativeChecking":
+    "正在确认工具能力，暂不提供原生删除选项。",
+  "aiSession.deleteScopeNativeAlreadyDeleted":
+    "该原生会话已被标记为删除，只能清理本地记录。",
+  "aiSession.deleteLocalAction": "删除本地记录",
+  "aiSession.deleteContinue": "继续",
+  "aiSession.deleteConfirmAction": "确认删除",
+  "aiSession.deleteNativeConfirmTitle": "确认删除原生会话",
+  "aiSession.deleteNativeImpact":
+    "这会删除 AI 编程工具中的真实会话，而不只是 VibeAcross 中的记录，且可能无法撤销。",
   "aiSession.deleteFailed": "删除会话失败。",
   "aiSession.deletedWithNative": "已删除会话「{name}」及其在工具中的原生会话。",
   "aiSession.deletedLocalOnly":
     "已删除会话「{name}」的本地记录（工具中的原生会话已保留）。",
   "aiSession.deletedNativeOnly":
-    "已删除工具中的原生会话（VibeAcross 中的本地记录已保留）。",
+    "已删除工具中的原生会话；VibeAcross 中的本地记录已保留并标记为原生会话已删除。",
   "aiSession.deleteNativeAlreadyGoneOnly":
-    "工具中已不存在该原生会话，VibeAcross 中的本地记录已保留。",
+    "工具中已不存在该原生会话；VibeAcross 中的本地记录已保留并标记为原生会话已删除。",
+  "aiSession.deletePartialNativeOnly":
+    "工具中的原生会话已删除，但 VibeAcross 本地记录清理失败：{reason} 可重试清理本地记录。",
   "aiSession.deletedBothNativeAlreadyGone":
     "工具中本已不存在该原生会话，已清理 VibeAcross 中的本地记录。",
   "aiSession.lastUsed": "最近使用 {time}",
   "aiSession.updatedAt": "更新于 {time}",
   "aiSession.statusActive": "可恢复",
   "aiSession.statusArchived": "已归档",
+  "aiSession.statusNativeDeleted": "原生会话已删除",
   "aiSession.statusMissing": "会话已不存在",
   "aiSession.statusProjectMissing": "项目目录不存在",
   "aiSession.statusUnsupported": "当前工具不支持恢复",
@@ -917,6 +976,38 @@ export const zhCN = {
   "aiSession.successRestored": "已恢复会话「{name}」。",
   "aiSession.noToolsTitle": "未检测到可用工具",
   "aiSession.noTools": "当前没有已检测到的 AI 工具，请先在 Tools 页面检测或配置。",
+
+  // 共享上下文（项目级 Markdown 文件）
+  "claudeRef.sectionTitle": "Claude Code 引用入口（CLAUDE.md）",
+  "claudeRef.description":
+    "在项目根 CLAUDE.md 中维护一段 VibeAcross 受管区块，用 Claude Code 支持的 @.vibeacross/context.md 导入语法引用共享上下文。不会复制上下文正文，也不会改动你的其它内容。",
+  "claudeRef.enableCreate": "创建 CLAUDE.md 并接入",
+  "claudeRef.confirmEnableCreateIntro": "将在项目根创建一个新的 CLAUDE.md 文件：",
+  "claudeRef.conflict":
+    "CLAUDE.md 在预览后已被外部修改，已取消写入以免覆盖。请重新载入后再试。",
+  "claudeRef.compatTitle": "Claude Code 对共享上下文的读取",
+  "claudeRef.compatVerified":
+    "官方文档说明：CLAUDE.md 中的 @ 导入会在启动时把共享上下文内联进上下文。",
+  "claudeRef.compatUnverified":
+    "尚未在真实 Claude Code 环境中验证该入口确实加载了共享上下文。",
+  "claudeRef.compatNote":
+    "创建成功只代表已按受支持的方式生成引用，不代表已在真实环境验证生效，也不保证模型一定会读取。",
+
+  // OpenCode 引用入口（项目根 opencode.json / opencode.jsonc 的 instructions 字段）
+  "opencodeRef.sectionTitle": "OpenCode 引用入口（opencode.json）",
+  "opencodeRef.description":
+    "在项目根 opencode.json / opencode.jsonc 的 instructions 字段中加入 .vibeacross/context.md 条目，使 OpenCode 新会话在初始化时加载共享上下文。只新增或移除这一条由 VibeAcross 管理的条目，注释、缩进与你的其它配置（模型、插件、权限等）原样保留。",
+  "opencodeRef.enableCreate": "创建 opencode.json 并接入",
+  "opencodeRef.confirmEnableCreateIntro": "将在项目根创建一个新的 opencode.json 文件：",
+  "opencodeRef.conflict":
+    "opencode.json 在预览后已被外部修改，已取消写入以免覆盖。请重新载入后再试。",
+  "opencodeRef.compatTitle": "OpenCode 对共享上下文的读取",
+  "opencodeRef.compatVerified":
+    "官方文档说明：opencode.json 的 instructions 字段会被并入上下文，且 OpenCode 不会自动解析 AGENTS.md 中的 @ 引用，因此使用 instructions 是受支持的加载方式。",
+  "opencodeRef.compatUnverified":
+    "尚未在真实 OpenCode 会话中验证该入口确实加载了共享上下文。",
+  "opencodeRef.compatNote":
+    "写入成功只代表已按受支持的方式生成引用配置，不代表已在真实环境验证生效，也不保证模型一定会读取。",
 
   // 应用内更新
   "update.sectionTitle": "应用更新",

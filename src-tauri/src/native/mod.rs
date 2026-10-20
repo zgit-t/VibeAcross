@@ -32,9 +32,10 @@ pub use history::{
 
 use crate::error::AppError;
 use crate::launch::{self, LaunchGuard, LaunchResult, ProcessLauncher};
+use crate::native_claims;
 use crate::project_tools;
 use crate::projects;
-use crate::sessions::{self, Session};
+use crate::sessions::{self, Session, SessionStatus};
 use crate::tools::detect::Detector;
 use crate::tools::service as tools;
 use rusqlite::Connection;
@@ -560,9 +561,17 @@ pub fn list_native_with_state(
 pub struct SyncOutcome {
     pub state: HistoryQueryState,
     pub sessions: Vec<Session>,
+    /// 因「已归属于其它项目身份（含已被移除的项目）」而被跳过的原生会话数量。
+    /// 这些会话仍保留在工具中，只是不会自动归入当前项目。
+    pub skipped: usize,
 }
 
 /// 将工具中的原生会话导入（幂等）为本地会话记录，并返回数据源状态与同步后的本地列表。
+///
+/// 归属规则：一条原生会话一旦被某个项目身份认领（见 [`crate::native_claims`]），
+/// 就只属于该项目身份。因此，当某个项目被移除后，即使在同一路径重建一个同名项目，
+/// 旧项目遗留的原生会话也不会被自动重新归入新项目；这些会话计入 `skipped` 如实返回，
+/// 绝不静默改投新项目。
 pub fn sync(
     conn: &Connection,
     backend: &dyn NativeBackend,
@@ -572,18 +581,41 @@ pub fn sync(
 ) -> Result<SyncOutcome, AppError> {
     let listing = list_native_with_state(conn, backend, detector, project_id, tool_install_id)?;
     let association = project_tools::ensure(conn, project_id, tool_install_id)?;
+    let identity = native_claims::association_identity(conn, &association.id)?;
     let mut sessions_out = Vec::with_capacity(listing.items.len());
+    let mut skipped = 0usize;
     for native in &listing.items {
+        let available = match identity.as_ref() {
+            Some((tool_id, _)) => native_claims::is_available_for(
+                conn,
+                tool_id,
+                &native.native_id,
+                project_id,
+            )?,
+            None => true,
+        };
+        if !available {
+            skipped += 1;
+            continue;
+        }
         let name = native
             .title
             .clone()
             .unwrap_or_else(|| format!("会话 {}", short_id(&native.native_id)));
-        let session = sessions::upsert_native(conn, &association.id, &name, &native.native_id, None)?;
-        sessions_out.push(session);
+        // 竞态兜底：极端情况下（并发同步）该会话可能在检查后被其它项目认领，
+        // 此时如实计入 `skipped`，绝不写入当前项目。
+        match sessions::upsert_native(conn, &association.id, &name, &native.native_id, None) {
+            Ok(session) => sessions_out.push(session),
+            Err(error) if error.code == "SESSION_NATIVE_CLAIMED_ELSEWHERE" => {
+                skipped += 1;
+            }
+            Err(error) => return Err(error),
+        }
     }
     Ok(SyncOutcome {
         state: listing.state,
         sessions: sessions_out,
+        skipped,
     })
 }
 
@@ -597,6 +629,12 @@ pub fn restore(
     session_id: &str,
 ) -> Result<LaunchResult, AppError> {
     let session = sessions::get(conn, session_id)?;
+    if session.status == SessionStatus::NativeDeleted {
+        return Err(AppError::new(
+            "NATIVE_SESSION_DELETED",
+            "该会话对应的原生会话已被删除，无法恢复；可清理本地记录或改用「打开项目」。",
+        ));
+    }
     let native_id = session.native_session_id.clone().ok_or_else(|| {
         AppError::new(
             "SESSION_NO_NATIVE_ID",
@@ -655,6 +693,12 @@ pub fn rename(
     let session = sessions::get(conn, session_id)?;
     let mut native_renamed = false;
     if sync_native {
+        if session.status == SessionStatus::NativeDeleted {
+            return Err(AppError::new(
+                "NATIVE_SESSION_DELETED",
+                "该会话对应的原生会话已被删除，无法同步修改原生标题；可仅修改本地显示名称。",
+            ));
+        }
         let native_id = session.native_session_id.clone().ok_or_else(|| {
             AppError::new(
                 "SESSION_NO_NATIVE_ID",
@@ -715,15 +759,21 @@ pub struct DeleteOutcome {
     pub native_already_gone: bool,
     /// VibeAcross 本地记录是否已清理。
     pub local_deleted: bool,
+    /// 原生删除成功，但本地状态更新 / 记录清理失败。
+    pub local_cleanup_failed: bool,
+    /// 部分成功时可诊断的本地失败原因；没有失败时为 null。
+    pub local_cleanup_error: Option<String>,
 }
 
 /// 仅删除工具中的原生会话，保留 VibeAcross 本地记录。
 ///
 /// 约束：
-///  - 仅在工具**已核实**支持删除原生会话时才执行；不支持 / 未核实一律如实报错，
-///    绝不伪造删除能力；
-///  - 目标由本地记录解析出真实原生会话标识，并重新核对其所属项目 / 工具 / 目录；
-///  - 删除失败直接返回错误，绝不触碰本地记录。
+///  - 仅在工具**已核实**支持删除、且能提供稳定原生会话标识时才执行；
+///    不支持 / 未核实一律如实报错，绝不伪造删除能力；
+///  - 目标由本地记录解析出真实原生会话标识，并重新核对其所属项目 / 工具 / 目录
+///    与归属登记；身份冲突时拒绝删除，避免误删其它项目的原生会话；
+///  - 删除失败直接返回错误，绝不触碰本地记录；
+///  - 本地记录已标记为原生删除时不重复调用工具删除接口。
 pub fn delete_native_only(
     conn: &Connection,
     backend: &dyn NativeBackend,
@@ -731,6 +781,13 @@ pub fn delete_native_only(
     session_id: &str,
 ) -> Result<NativeDeleteOutcome, AppError> {
     let session = sessions::get(conn, session_id)?;
+    if session.status == SessionStatus::NativeDeleted {
+        return Ok(NativeDeleteOutcome {
+            native_deleted: true,
+            native_already_gone: true,
+        });
+    }
+
     let native_id = session.native_session_id.clone().ok_or_else(|| {
         AppError::new(
             "SESSION_NO_NATIVE_ID",
@@ -740,7 +797,34 @@ pub fn delete_native_only(
 
     let project = projects::get_project(conn, &session.project_id)?;
     let ctx = tool_context(conn, detector, &session.tool_id, Path::new(&project.path))?;
-    match backend.capabilities(&ctx.tool_id).delete {
+
+    // 项目身份必须与本地记录一致；项目关联被改写或数据不一致时拒绝执行。
+    let (_, association_project) =
+        native_claims::association_identity(conn, &session.project_tool_id)?.ok_or_else(|| {
+            AppError::new(
+                "SESSION_ASSOCIATION_MISSING",
+                "该会话所属的项目与工具关联已不存在，已取消删除。",
+            )
+        })?;
+    if association_project != session.project_id {
+        return Err(AppError::new(
+            "SESSION_IDENTITY_CONFLICT",
+            "会话记录的项目身份与当前关联不一致，已取消删除以免误删。",
+        ));
+    }
+
+    // 归属冲突时拒绝：不能删除已被另一个项目身份认领的原生会话。
+    if let Some(owner) = native_claims::owner_project(conn, &ctx.tool_id, &native_id)? {
+        if owner != session.project_id {
+            return Err(AppError::new(
+                "SESSION_NATIVE_CLAIM_CONFLICT",
+                "该原生会话归属于另一个项目身份，已取消删除以免误删其它项目的会话。",
+            ));
+        }
+    }
+
+    let caps = backend.capabilities(&ctx.tool_id);
+    match caps.delete {
         Support::Supported => {}
         Support::Unsupported => {
             return Err(AppError::new(
@@ -760,6 +844,15 @@ pub fn delete_native_only(
                 ),
             ))
         }
+    }
+    if caps.native_id != Support::Supported {
+        return Err(AppError::new(
+            "NATIVE_DELETE_UNSUPPORTED",
+            format!(
+                "{} 未提供可用于定位原生会话的稳定标识，已取消删除。",
+                ctx.tool_name
+            ),
+        ));
     }
 
     // 仅在具备可靠存在性查询能力时预检：既能确认「已不存在」，也能避免删除目标错位
@@ -782,10 +875,15 @@ pub fn delete_native_only(
 
 /// 按照选定范围删除会话，协调原生删除与本地清理的执行顺序及错误处理。
 ///
-/// 严格区分两类数据：
+/// 严格区分三类数据：
 ///  - `Local`：只清理本地记录，**绝不**调用任何原生删除操作；
-///  - `Native`：只删除原生会话，**绝不**清理本地记录；
+///  - `Native`：只删除原生会话，保留本地记录，并将其标记为 `nativeDeleted`；
 ///  - `Both`：先成功删除原生会话，再清理本地记录；原生删除失败则保留本地记录。
+///
+/// `native_session_claims` 不在这里清理：本地删除不能释放仍存在于工具中的原生会话，
+/// 原生删除后也保留历史归属，避免同一标识被其它项目误接管。`sessions` 的删除只
+/// 级联 / 置空 VibeAcross 自身的关联数据（如 `memory_records.session_id`），不会触碰
+/// 用户项目文件、工具会话存储或插件配置。
 pub fn delete_session(
     conn: &Connection,
     backend: &dyn NativeBackend,
@@ -804,36 +902,70 @@ pub fn delete_session(
                 native_deleted: false,
                 native_already_gone: false,
                 local_deleted: true,
+                local_cleanup_failed: false,
+                local_cleanup_error: None,
             })
         }
         DeleteScope::Native => {
             let native = delete_native_only(conn, backend, detector, session_id)?;
+            if let Err(error) = sessions::mark_native_deleted(conn, session_id) {
+                return Ok(DeleteOutcome {
+                    scope,
+                    native_deleted: native.native_deleted,
+                    native_already_gone: native.native_already_gone,
+                    local_deleted: false,
+                    local_cleanup_failed: true,
+                    local_cleanup_error: Some(format!(
+                        "原生会话已删除，但更新 VibeAcross 本地记录状态失败：{}",
+                        error.message
+                    )),
+                });
+            }
             Ok(DeleteOutcome {
                 scope,
                 native_deleted: native.native_deleted,
                 native_already_gone: native.native_already_gone,
                 local_deleted: false,
+                local_cleanup_failed: false,
+                local_cleanup_error: None,
             })
         }
         DeleteScope::Both => {
             // 顺序：必须先成功删除原生会话，再清理本地记录；原生失败直接返回，
-            // 本地记录保持不变。
+            // 本地记录保持不变。原生成功后先标记本地状态，确保即使清理失败，
+            // 记录也不会继续显示为可恢复的正常会话。
             let native = delete_native_only(conn, backend, detector, session_id)?;
-            sessions::delete(conn, session_id).map_err(|error| {
-                AppError::new(
-                    "NATIVE_DELETE_LOCAL_CLEANUP_FAILED",
-                    format!(
-                        "工具中的原生会话已删除，但清理 VibeAcross 本地记录失败：{} 请重试删除以清理该记录。",
+            let mark_error = sessions::mark_native_deleted(conn, session_id).err();
+            match sessions::delete(conn, session_id) {
+                Ok(()) => Ok(DeleteOutcome {
+                    scope,
+                    native_deleted: native.native_deleted,
+                    native_already_gone: native.native_already_gone,
+                    local_deleted: true,
+                    local_cleanup_failed: false,
+                    local_cleanup_error: None,
+                }),
+                Err(error) => {
+                    let mut detail = format!(
+                        "原生会话已删除，但清理 VibeAcross 本地记录失败：{}",
                         error.message
-                    ),
-                )
-            })?;
-            Ok(DeleteOutcome {
-                scope,
-                native_deleted: native.native_deleted,
-                native_already_gone: native.native_already_gone,
-                local_deleted: true,
-            })
+                    );
+                    if let Some(mark_error) = mark_error {
+                        detail.push_str(&format!(
+                            "；同时更新本地记录状态失败：{}",
+                            mark_error.message
+                        ));
+                    }
+                    Ok(DeleteOutcome {
+                        scope,
+                        native_deleted: native.native_deleted,
+                        native_already_gone: native.native_already_gone,
+                        local_deleted: false,
+                        local_cleanup_failed: true,
+                        local_cleanup_error: Some(detail),
+                    })
+                }
+            }
         }
     }
 }

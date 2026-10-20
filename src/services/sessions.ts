@@ -85,6 +85,17 @@ export function renameNativeSession(
   });
 }
 
+/**
+ * 按明确范围删除会话（仅本地 / 仅原生 / 两者）。
+ * 后端独立校验身份、能力与执行顺序；前端只提交会话 id 与范围。
+ */
+export function deleteSessionScoped(
+  id: string,
+  scope: DeleteScope,
+): Promise<SessionDeleteOutcome> {
+  return invoke<SessionDeleteOutcome>("delete_session_scoped", { id, scope });
+}
+
 /** 查询本地会话记录（可按项目 / 工具 / 状态过滤）。 */
 export function listSessions(query: AiSessionQuery = {}): Promise<AiSession[]> {
   return invoke<AiSession[]>("list_sessions", { query });
@@ -93,21 +104,7 @@ export function listSessions(query: AiSessionQuery = {}): Promise<AiSession[]> {
 /** 设置本地会话状态（active / archived）。 */
 export function setSessionStatus(
   id: string,
-  status: AiSessionStatus,
+  status: Exclude<AiSessionStatus, "nativeDeleted">,
 ): Promise<AiSession> {
   return invoke<AiSession>("set_session_status", { id, status });
-}
-
-/**
- * 按选定范围删除会话。范围与执行顺序全部由后端协调：
- *  - `"local"`：只清理 VibeAcross 本地记录，绝不调用原生删除；
- *  - `"native"`：只删除工具中的原生会话，保留本地记录；
- *  - `"both"`：先成功删除原生会话，再清理本地记录（原生失败则保留本地记录）。
- * 结果如实反映实际删除范围；工具不支持原生删除时后端会报错，绝不伪造能力。
- */
-export function deleteSessionScoped(
-  id: string,
-  scope: DeleteScope,
-): Promise<SessionDeleteOutcome> {
-  return invoke<SessionDeleteOutcome>("delete_session_scoped", { id, scope });
 }

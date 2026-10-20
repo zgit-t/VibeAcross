@@ -62,6 +62,21 @@ describe("getAiSessionState", () => {
     expect(state.tone).toBe("danger");
   });
 
+  it("原生会话已删除时优先判定为 nativeDeleted 且不可恢复", () => {
+    const state = getAiSessionState(
+      makeSession({
+        status: "nativeDeleted",
+        projectPathExists: false,
+      }),
+      makeCaps("supported"),
+      { projectPathExists: false },
+    );
+    expect(state.id).toBe("nativeDeleted");
+    expect(state.canRestore).toBe(false);
+    expect(state.tone).toBe("danger");
+    expect(state.labelKey).toBe("aiSession.statusNativeDeleted");
+  });
+
   it("缺少原生标识时判定为 localOnly 且不可恢复", () => {
     const state = getAiSessionState(
       makeSession({ nativeSessionId: null }),

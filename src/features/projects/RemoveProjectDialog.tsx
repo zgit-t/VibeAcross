@@ -141,26 +141,29 @@ export function RemoveProjectDialog({
               </p>
             </>
           ) : (
-            <RadioGroup<RemovalScope>
-              name="remove-project-scope"
-              ariaLabel={t("removeProject.scopeAria")}
-              value={scope}
-              onChange={setScope}
-              options={[
-                {
-                  value: "record",
-                  label: t("removeProject.optionRecord"),
-                  description: t("removeProject.optionRecordDescription"),
-                  note: t("removeProject.optionRecordNote"),
-                },
-                {
-                  value: "folder",
-                  label: t("removeProject.optionFolder"),
-                  description: t("removeProject.optionFolderDescription"),
-                  note: t("removeProject.optionFolderNote"),
-                },
-              ]}
-            />
+            <>
+              <RadioGroup<RemovalScope>
+                name="remove-project-scope"
+                ariaLabel={t("removeProject.scopeAria")}
+                value={scope}
+                onChange={setScope}
+                options={[
+                  {
+                    value: "record",
+                    label: t("removeProject.optionRecord"),
+                    description: t("removeProject.optionRecordDescription"),
+                    note: t("removeProject.optionRecordNote"),
+                  },
+                  {
+                    value: "folder",
+                    label: t("removeProject.optionFolder"),
+                    description: t("removeProject.optionFolderDescription"),
+                    note: t("removeProject.optionFolderNote"),
+                  },
+                ]}
+              />
+              <p className={styles.note}>{t("removeProject.nativeNote")}</p>
+            </>
           )}
         </div>
       )}

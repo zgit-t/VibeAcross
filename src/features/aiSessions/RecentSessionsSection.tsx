@@ -31,6 +31,7 @@ const BLOCK_REASON_KEY: Record<
   OpenSessionBlockReason,
   | "overview.recentSessions.reasonProjectGone"
   | "overview.recentSessions.reasonPathMissing"
+  | "overview.recentSessions.reasonNativeDeleted"
   | "overview.recentSessions.reasonNoNativeId"
   | "overview.recentSessions.reasonToolUnavailable"
   | "overview.recentSessions.reasonUnsupported"
@@ -38,6 +39,7 @@ const BLOCK_REASON_KEY: Record<
 > = {
   projectGone: "overview.recentSessions.reasonProjectGone",
   pathMissing: "overview.recentSessions.reasonPathMissing",
+  nativeDeleted: "overview.recentSessions.reasonNativeDeleted",
   noNativeId: "overview.recentSessions.reasonNoNativeId",
   toolUnavailable: "overview.recentSessions.reasonToolUnavailable",
   unsupported: "overview.recentSessions.reasonUnsupported",

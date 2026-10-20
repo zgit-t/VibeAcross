@@ -8,6 +8,8 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use rusqlite::OptionalExtension;
+
 use vibeacross_lib::db::Database;
 use vibeacross_lib::error::AppError;
 use vibeacross_lib::launch::{LaunchError, LaunchGuard, LaunchSpec, ProcessLauncher};
@@ -16,7 +18,7 @@ use vibeacross_lib::native::{
     SessionCapabilities, Support, SystemNativeBackend, ToolContext,
 };
 use vibeacross_lib::projects;
-use vibeacross_lib::sessions::{self, SessionInput};
+use vibeacross_lib::sessions::{self, SessionInput, SessionStatus};
 use vibeacross_lib::tools::detect::{DetectError, Detector, RegistryInstall, VersionOutcome};
 use vibeacross_lib::tools::model::ToolConfigInput;
 use vibeacross_lib::tools::service as tools;
@@ -297,6 +299,21 @@ fn create_input(project_id: &str, tool_id: &str, name: Option<&str>, launch: boo
         display_name: name.map(str::to_string),
         launch,
     }
+}
+
+fn claim_owner(
+    conn: &rusqlite::Connection,
+    tool_id: &str,
+    native_id: &str,
+) -> Option<String> {
+    conn.query_row(
+        "SELECT project_id FROM native_session_claims
+         WHERE tool_id = ?1 AND native_session_id = ?2",
+        rusqlite::params![tool_id, native_id],
+        |row| row.get(0),
+    )
+    .optional()
+    .unwrap()
 }
 
 #[test]
@@ -711,6 +728,261 @@ fn sync_imports_native_sessions_idempotently() {
 }
 
 #[test]
+fn sync_does_not_readopt_sessions_from_removed_same_path_project() {
+    let workspace = tempfile::tempdir().unwrap();
+    let project_dir = make_dir(workspace.path(), "proj");
+    let exe = stub_exe(workspace.path(), "opencode.exe");
+    let detector = StubDetector::new().with_file(&exe);
+    let db = Database::open_in_memory().unwrap();
+    let conn = db.conn().unwrap();
+    let first_project = import_project(&conn, &project_dir);
+    let tool_id = add_tool(&conn, &detector, "opencode", &exe);
+
+    let backend = FakeBackend::new();
+    backend.set_list(vec![NativeSessionInfo {
+        native_id: "ses_old".to_string(),
+        title: Some("旧会话".to_string()),
+        directory: None,
+        created_at: None,
+        updated_at: None,
+    }]);
+
+    // 首次导入：旧项目接管该原生会话。
+    let first = native::sync(&conn, &backend, &detector, &first_project, &tool_id).unwrap();
+    assert_eq!(first.skipped, 0);
+    assert_eq!(first.sessions.len(), 1);
+
+    // 移除项目记录（磁盘目录保留），随后在同一路径重建同名项目：这是新的项目身份。
+    projects::remove_project(&conn, &first_project).unwrap();
+    let second_project = import_project(&conn, &project_dir);
+    assert_ne!(first_project, second_project, "重建应为新的项目身份");
+
+    // 关键：旧项目遗留的原生会话不得被同路径新项目自动接管。
+    let second = native::sync(&conn, &backend, &detector, &second_project, &tool_id).unwrap();
+    assert_eq!(
+        second.sessions.len(),
+        0,
+        "旧项目的原生会话不得自动归入新项目"
+    );
+    assert_eq!(second.skipped, 1, "被跳过的旧会话应如实计数");
+
+    let listed = sessions::list(
+        &conn,
+        &sessions::SessionQuery {
+            project_id: Some(second_project.clone()),
+            tool_id: None,
+            status: None,
+        },
+    )
+    .unwrap();
+    assert!(listed.is_empty(), "新项目不应出现旧项目的会话记录");
+
+    // 工具中该原生会话仍然存在（只读枚举），VibeAcross 不谎称已删除。
+    let native_list =
+        native::list_native(&conn, &backend, &detector, &second_project, &tool_id).unwrap();
+    assert_eq!(native_list.len(), 1);
+}
+
+#[test]
+fn created_native_session_is_not_readopted_after_project_recreated() {
+    let workspace = tempfile::tempdir().unwrap();
+    let project_dir = make_dir(workspace.path(), "proj");
+    let exe = stub_exe(workspace.path(), "opencode.exe");
+    let detector = StubDetector::new().with_file(&exe);
+    let db = Database::open_in_memory().unwrap();
+    let conn = db.conn().unwrap();
+    let first_project = import_project(&conn, &project_dir);
+    let tool_id = add_tool(&conn, &detector, "opencode", &exe);
+
+    let backend = FakeBackend::new();
+    backend.set_create_id("native-created");
+    let launcher = RecordingLauncher::new();
+    let guard = LaunchGuard::new();
+    let outcome = native::create(
+        &conn,
+        &backend,
+        &launcher,
+        &guard,
+        &detector,
+        create_input(&first_project, &tool_id, Some("新会话"), false),
+    )
+    .unwrap();
+    assert_eq!(
+        outcome.session.native_session_id.as_deref(),
+        Some("native-created")
+    );
+
+    projects::remove_project(&conn, &first_project).unwrap();
+    let second_project = import_project(&conn, &project_dir);
+
+    // 工具中仍能枚举到该会话，但同步不得把它归入新项目。
+    backend.set_list(vec![NativeSessionInfo {
+        native_id: "native-created".to_string(),
+        title: Some("新会话".to_string()),
+        directory: None,
+        created_at: None,
+        updated_at: None,
+    }]);
+    let synced = native::sync(&conn, &backend, &detector, &second_project, &tool_id).unwrap();
+    assert_eq!(synced.sessions.len(), 0);
+    assert_eq!(synced.skipped, 1);
+}
+
+#[test]
+fn create_rejects_native_session_owned_by_another_project() {
+    let workspace = tempfile::tempdir().unwrap();
+    let dir_a = make_dir(workspace.path(), "a");
+    let dir_b = make_dir(workspace.path(), "b");
+    let exe = stub_exe(workspace.path(), "opencode.exe");
+    let detector = StubDetector::new().with_file(&exe);
+    let db = Database::open_in_memory().unwrap();
+    let conn = db.conn().unwrap();
+    let p1 = import_project(&conn, &dir_a);
+    let p2 = import_project(&conn, &dir_b);
+    let tool = add_tool(&conn, &detector, "opencode", &exe);
+
+    sessions::create(
+        &conn,
+        SessionInput {
+            project_id: p1,
+            tool_id: tool.clone(),
+            display_name: "A 的会话".to_string(),
+            native_session_id: Some("shared-native".to_string()),
+            working_directory: None,
+        },
+    )
+    .unwrap();
+
+    // 同一原生会话已被另一个项目认领 → 不得在本项目下重复关联。
+    let error = sessions::create(
+        &conn,
+        SessionInput {
+            project_id: p2.clone(),
+            tool_id: tool,
+            display_name: "B 的会话".to_string(),
+            native_session_id: Some("shared-native".to_string()),
+            working_directory: None,
+        },
+    )
+    .unwrap_err();
+    assert_eq!(error.code, "SESSION_NATIVE_CLAIMED_ELSEWHERE");
+
+    let listed = sessions::list(
+        &conn,
+        &sessions::SessionQuery {
+            project_id: Some(p2),
+            tool_id: None,
+            status: None,
+        },
+    )
+    .unwrap();
+    assert!(listed.is_empty(), "被拒绝的会话不应留下记录");
+}
+
+#[test]
+fn native_session_claim_is_scoped_by_tool_across_installations() {
+    // 同一款工具的两个安装实例共享「工具标识 + 原生会话标识」这一身份键：
+    // 一条原生会话只能被一个项目身份认领，避免同一会话被两个项目同时接管。
+    let workspace = tempfile::tempdir().unwrap();
+    let dir_a = make_dir(workspace.path(), "a");
+    let dir_b = make_dir(workspace.path(), "b");
+    let exe_a = stub_exe(workspace.path(), "opencode-a.exe");
+    let exe_b = stub_exe(workspace.path(), "opencode-b.exe");
+    let detector = StubDetector::new().with_file(&exe_a).with_file(&exe_b);
+    let db = Database::open_in_memory().unwrap();
+    let conn = db.conn().unwrap();
+    let p1 = import_project(&conn, &dir_a);
+    let p2 = import_project(&conn, &dir_b);
+    add_tool(&conn, &detector, "opencode", &exe_a);
+    add_tool(&conn, &detector, "opencode", &exe_b);
+    let state = tools::tool_state(&conn, &detector).unwrap();
+    let install_for = |path: &str| {
+        state
+            .entries
+            .iter()
+            .find(|entry| {
+                entry.source != "builtin"
+                    && entry.executable_path.as_deref().map(normalize) == Some(normalize(path))
+            })
+            .map(|entry| entry.id.clone())
+            .unwrap_or_else(|| panic!("未找到安装实例：{path}"))
+    };
+    let tool_a = install_for(&exe_a);
+    let tool_b = install_for(&exe_b);
+    assert_ne!(tool_a, tool_b, "两个安装实例应是不同的安装身份");
+
+    let backend = FakeBackend::new();
+    backend.set_list(vec![NativeSessionInfo {
+        native_id: "ses-x".to_string(),
+        title: None,
+        directory: None,
+        created_at: None,
+        updated_at: None,
+    }]);
+
+    let first = native::sync(&conn, &backend, &detector, &p1, &tool_a).unwrap();
+    assert_eq!(first.sessions.len(), 1);
+    assert_eq!(first.skipped, 0);
+
+    // 另一个项目使用**另一个安装实例**，但同一条原生会话已被 p1 认领 → 跳过。
+    let second = native::sync(&conn, &backend, &detector, &p2, &tool_b).unwrap();
+    assert_eq!(second.sessions.len(), 0);
+    assert_eq!(second.skipped, 1);
+}
+
+#[test]
+fn restoring_project_identity_recovers_its_native_sessions() {
+    // 按路径重新导入得到的是**新身份**，不得恢复旧会话；而恢复**原项目身份**
+    // （例如从数据库备份恢复同一个项目 UUID）时，归属登记依然匹配，可恢复关联。
+    let workspace = tempfile::tempdir().unwrap();
+    let project_dir = make_dir(workspace.path(), "proj");
+    let exe = stub_exe(workspace.path(), "opencode.exe");
+    let detector = StubDetector::new().with_file(&exe);
+    let db = Database::open_in_memory().unwrap();
+    let conn = db.conn().unwrap();
+    let original = import_project(&conn, &project_dir);
+    let tool = add_tool(&conn, &detector, "opencode", &exe);
+
+    let backend = FakeBackend::new();
+    backend.set_list(vec![NativeSessionInfo {
+        native_id: "ses-orig".to_string(),
+        title: None,
+        directory: None,
+        created_at: None,
+        updated_at: None,
+    }]);
+    native::sync(&conn, &backend, &detector, &original, &tool).unwrap();
+
+    // 仅移除项目记录：磁盘与工具会话保留，归属登记（owner=原身份）保留。
+    projects::remove_project(&conn, &original).unwrap();
+
+    // 1) 按路径重新导入 → 全新身份 → 不得恢复旧会话。
+    let reimported = import_project(&conn, &project_dir);
+    assert_ne!(reimported, original, "重新导入应为新的项目身份");
+    let after = native::sync(&conn, &backend, &detector, &reimported, &tool).unwrap();
+    assert_eq!(after.sessions.len(), 0);
+    assert_eq!(after.skipped, 1);
+    projects::remove_project(&conn, &reimported).unwrap();
+
+    // 2) 恢复**原项目身份**（模拟从备份恢复同一 UUID）→ 归属匹配，恢复关联。
+    let now = "2026-01-01T00:00:00.000Z";
+    conn.execute(
+        "INSERT INTO projects (id, name, path, created_at, updated_at, description, is_favorite)
+         VALUES (?1, 'Restored', ?2, ?3, ?3, NULL, 0)",
+        rusqlite::params![original, project_dir.to_string_lossy(), now],
+    )
+    .unwrap();
+
+    let restored = native::sync(&conn, &backend, &detector, &original, &tool).unwrap();
+    assert_eq!(restored.sessions.len(), 1);
+    assert_eq!(restored.skipped, 0);
+    assert_eq!(
+        restored.sessions[0].native_session_id.as_deref(),
+        Some("ses-orig")
+    );
+}
+
+#[test]
 fn rename_updates_local_name_and_reports_native_flag() {
     let workspace = tempfile::tempdir().unwrap();
     let project_dir = make_dir(workspace.path(), "proj");
@@ -799,9 +1071,16 @@ fn delete_removes_native_session_then_local_record() {
     assert!(outcome.native_deleted);
     assert!(!outcome.native_already_gone);
     assert!(outcome.local_deleted);
+    assert!(!outcome.local_cleanup_failed);
+    assert!(outcome.local_cleanup_error.is_none());
     assert_eq!(backend.deleted(), vec!["native-1".to_string()]);
     // 原生删除成功后才清理本地记录。
     assert!(sessions::get(&conn, &created.session.id).is_err());
+    // 认领是项目级历史归属，不随单条本地记录删除而清除。
+    assert_eq!(
+        claim_owner(&conn, "opencode", "native-1").as_deref(),
+        Some(project_id.as_str())
+    );
 }
 
 #[test]
@@ -834,7 +1113,10 @@ fn delete_rejects_tool_without_native_delete_and_keeps_record() {
     assert_eq!(error.code, "NATIVE_DELETE_UNSUPPORTED");
     // 绝不静默退化为只删本地记录。
     assert!(backend.deleted().is_empty());
-    assert!(sessions::get(&conn, &created.session.id).is_ok());
+    assert_eq!(
+        sessions::get(&conn, &created.session.id).unwrap().status,
+        SessionStatus::Active
+    );
 }
 
 #[test]
@@ -869,7 +1151,10 @@ fn delete_keeps_local_record_when_native_delete_fails() {
     assert_eq!(error.code, "NATIVE_DELETE_FAILED");
     assert!(backend.deleted().is_empty());
     // 原生删除失败 → 本地记录保持不变，避免状态不一致。
-    assert!(sessions::get(&conn, &created.session.id).is_ok());
+    assert_eq!(
+        sessions::get(&conn, &created.session.id).unwrap().status,
+        SessionStatus::Active
+    );
 }
 
 #[test]
@@ -971,9 +1256,13 @@ fn delete_local_only_removes_record_and_leaves_native_untouched() {
     assert_eq!(outcome.scope, DeleteScope::Local);
     assert!(!outcome.native_deleted);
     assert!(outcome.local_deleted);
-    // 只删本地：绝不调用原生删除。
+    // 只删本地：绝不调用原生删除，也不释放原生会话的项目认领。
     assert!(backend.deleted().is_empty());
     assert!(sessions::get(&conn, &created.session.id).is_err());
+    assert_eq!(
+        claim_owner(&conn, "opencode", "native-1").as_deref(),
+        Some(project_id.as_str())
+    );
 }
 
 #[test]
@@ -1040,9 +1329,15 @@ fn delete_native_only_keeps_local_record() {
     assert_eq!(outcome.scope, DeleteScope::Native);
     assert!(outcome.native_deleted);
     assert!(!outcome.local_deleted);
+    assert!(!outcome.local_cleanup_failed);
     assert_eq!(backend.deleted(), vec!["native-1".to_string()]);
-    // 仅删原生：本地记录必须保留。
-    assert!(sessions::get(&conn, &created.session.id).is_ok());
+    // 仅删原生：本地记录必须保留，并如实标记为原生会话已删除。
+    let kept = sessions::get(&conn, &created.session.id).unwrap();
+    assert_eq!(kept.status, SessionStatus::NativeDeleted);
+    assert_eq!(
+        claim_owner(&conn, "opencode", "native-1").as_deref(),
+        Some(project_id.as_str())
+    );
 }
 
 #[test]
@@ -1074,5 +1369,226 @@ fn delete_native_only_rejects_unsupported_tool() {
             .unwrap_err();
     assert_eq!(error.code, "NATIVE_DELETE_UNSUPPORTED");
     assert!(backend.deleted().is_empty());
-    assert!(sessions::get(&conn, &created.session.id).is_ok());
+    assert_eq!(
+        sessions::get(&conn, &created.session.id).unwrap().status,
+        SessionStatus::Active
+    );
+}
+
+#[test]
+fn delete_both_reports_partial_success_and_allows_local_retry() {
+    let workspace = tempfile::tempdir().unwrap();
+    let project_dir = make_dir(workspace.path(), "proj");
+    let exe = stub_exe(workspace.path(), "opencode.exe");
+    let detector = StubDetector::new().with_file(&exe);
+    let db = Database::open_in_memory().unwrap();
+    let conn = db.conn().unwrap();
+    let project_id = import_project(&conn, &project_dir);
+    let tool_id = add_tool(&conn, &detector, "opencode", &exe);
+
+    let backend = FakeBackend::new();
+    let launcher = RecordingLauncher::new();
+    let guard = LaunchGuard::new();
+    let created = native::create(
+        &conn,
+        &backend,
+        &launcher,
+        &guard,
+        &detector,
+        create_input(&project_id, &tool_id, Some("部分成功"), false),
+    )
+    .unwrap();
+    backend.add_existing("native-1");
+
+    conn.execute_batch(
+        "CREATE TRIGGER block_session_delete
+         BEFORE DELETE ON sessions
+         BEGIN
+             SELECT RAISE(ABORT, 'local cleanup blocked');
+         END;",
+    )
+    .unwrap();
+
+    let outcome =
+        native::delete_session(&conn, &backend, &detector, &created.session.id, DeleteScope::Both)
+            .unwrap();
+    assert!(outcome.native_deleted);
+    assert!(!outcome.native_already_gone);
+    assert!(!outcome.local_deleted);
+    assert!(outcome.local_cleanup_failed);
+    assert!(outcome.local_cleanup_error.is_some());
+    assert_eq!(backend.deleted(), vec!["native-1".to_string()]);
+
+    // 原生已删除，本地清理失败：记录必须保留，且不能继续显示为可恢复状态。
+    let kept = sessions::get(&conn, &created.session.id).unwrap();
+    assert_eq!(kept.status, SessionStatus::NativeDeleted);
+
+    conn.execute_batch("DROP TRIGGER block_session_delete;")
+        .unwrap();
+    let retry =
+        native::delete_session(&conn, &backend, &detector, &created.session.id, DeleteScope::Both)
+            .unwrap();
+    assert!(retry.native_deleted);
+    assert!(retry.native_already_gone);
+    assert!(retry.local_deleted);
+    assert!(!retry.local_cleanup_failed);
+    // 重试只清理本地记录，不再重复调用工具删除接口。
+    assert_eq!(backend.deleted(), vec!["native-1".to_string()]);
+    assert!(sessions::get(&conn, &created.session.id).is_err());
+}
+
+#[test]
+fn delete_rejects_native_claim_owned_by_another_project() {
+    let workspace = tempfile::tempdir().unwrap();
+    let project_dir = make_dir(workspace.path(), "proj");
+    let other_project_dir = make_dir(workspace.path(), "other");
+    let exe = stub_exe(workspace.path(), "opencode.exe");
+    let detector = StubDetector::new().with_file(&exe);
+    let db = Database::open_in_memory().unwrap();
+    let conn = db.conn().unwrap();
+    let project_id = import_project(&conn, &project_dir);
+    let other_project_id = import_project(&conn, &other_project_dir);
+    let tool_id = add_tool(&conn, &detector, "opencode", &exe);
+
+    let backend = FakeBackend::new();
+    let launcher = RecordingLauncher::new();
+    let guard = LaunchGuard::new();
+    let created = native::create(
+        &conn,
+        &backend,
+        &launcher,
+        &guard,
+        &detector,
+        create_input(&project_id, &tool_id, Some("归属冲突"), false),
+    )
+    .unwrap();
+    backend.add_existing("native-1");
+
+    conn.execute(
+        "UPDATE native_session_claims SET project_id = ?1
+         WHERE tool_id = 'opencode' AND native_session_id = 'native-1'",
+        rusqlite::params![other_project_id],
+    )
+    .unwrap();
+
+    let error =
+        native::delete_session(&conn, &backend, &detector, &created.session.id, DeleteScope::Native)
+            .unwrap_err();
+    assert_eq!(error.code, "SESSION_NATIVE_CLAIM_CONFLICT");
+    assert!(backend.deleted().is_empty());
+    assert_eq!(
+        sessions::get(&conn, &created.session.id).unwrap().status,
+        SessionStatus::Active
+    );
+    assert_eq!(
+        claim_owner(&conn, "opencode", "native-1").as_deref(),
+        Some(other_project_id.as_str())
+    );
+}
+
+#[test]
+fn repeated_delete_does_not_touch_other_sessions() {
+    let workspace = tempfile::tempdir().unwrap();
+    let project_dir = make_dir(workspace.path(), "proj");
+    let exe = stub_exe(workspace.path(), "opencode.exe");
+    let detector = StubDetector::new().with_file(&exe);
+    let db = Database::open_in_memory().unwrap();
+    let conn = db.conn().unwrap();
+    let project_id = import_project(&conn, &project_dir);
+    let tool_id = add_tool(&conn, &detector, "opencode", &exe);
+
+    let backend = FakeBackend::new();
+    let launcher = RecordingLauncher::new();
+    let guard = LaunchGuard::new();
+    let first = native::create(
+        &conn,
+        &backend,
+        &launcher,
+        &guard,
+        &detector,
+        create_input(&project_id, &tool_id, Some("第一条"), false),
+    )
+    .unwrap();
+    backend.add_existing("native-1");
+    let second = sessions::create(
+        &conn,
+        SessionInput {
+            project_id: project_id.clone(),
+            tool_id: tool_id.clone(),
+            display_name: "第二条".to_string(),
+            native_session_id: None,
+            working_directory: None,
+        },
+    )
+    .unwrap();
+
+    native::delete_session(
+        &conn,
+        &backend,
+        &detector,
+        &first.session.id,
+        DeleteScope::Both,
+    )
+    .unwrap();
+    let error = native::delete_session(
+        &conn,
+        &backend,
+        &detector,
+        &first.session.id,
+        DeleteScope::Both,
+    )
+    .unwrap_err();
+    assert_eq!(error.code, "SESSION_NOT_FOUND");
+    assert_eq!(backend.deleted(), vec!["native-1".to_string()]);
+    assert_eq!(
+        sessions::get(&conn, &second.id).unwrap().display_name,
+        "第二条"
+    );
+}
+
+#[test]
+fn native_deleted_session_cannot_be_restored() {
+    let workspace = tempfile::tempdir().unwrap();
+    let project_dir = make_dir(workspace.path(), "proj");
+    let exe = stub_exe(workspace.path(), "opencode.exe");
+    let detector = StubDetector::new().with_file(&exe);
+    let db = Database::open_in_memory().unwrap();
+    let conn = db.conn().unwrap();
+    let project_id = import_project(&conn, &project_dir);
+    let tool_id = add_tool(&conn, &detector, "opencode", &exe);
+
+    let backend = FakeBackend::new();
+    let launcher = RecordingLauncher::new();
+    let guard = LaunchGuard::new();
+    let created = native::create(
+        &conn,
+        &backend,
+        &launcher,
+        &guard,
+        &detector,
+        create_input(&project_id, &tool_id, Some("不可恢复"), false),
+    )
+    .unwrap();
+    backend.add_existing("native-1");
+
+    native::delete_session(
+        &conn,
+        &backend,
+        &detector,
+        &created.session.id,
+        DeleteScope::Native,
+    )
+    .unwrap();
+
+    let error = native::restore(
+        &conn,
+        &backend,
+        &launcher,
+        &guard,
+        &detector,
+        &created.session.id,
+    )
+    .unwrap_err();
+    assert_eq!(error.code, "NATIVE_SESSION_DELETED");
+    assert!(launcher.specs.lock().unwrap().is_empty());
 }

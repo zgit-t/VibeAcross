@@ -163,6 +163,8 @@ export const enUS: Record<keyof typeof zhCN, string> = {
     "This session's project was removed, so it can't be opened.",
   "overview.recentSessions.reasonPathMissing":
     "The project folder is missing or inaccessible, so this session can't be opened.",
+  "overview.recentSessions.reasonNativeDeleted":
+    "The native session has been deleted and can't be restored.",
   "overview.recentSessions.reasonNoNativeId":
     "This session has no native session id, so it can't be opened directly.",
   "overview.recentSessions.reasonToolUnavailable":
@@ -239,6 +241,8 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   "removeProject.folderConfirmHint":
     "The project record is removed from VibeAcross only after the folder is deleted. If deletion fails, the record is kept so you can retry.",
   "removeProject.folderConfirmLabel": "Delete folder and remove",
+  "removeProject.nativeNote":
+    "Note: native sessions already stored by AI tools (such as Claude Code or OpenCode) are not deleted and remain in the tool. If a project with the same name is later re-created at the same path, VibeAcross treats it as a new project and will not automatically re-associate those past sessions.",
 
   // Project list
   "projectList.noTool": "No tool selected",
@@ -288,8 +292,6 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   "addProject.errLocation": "Select the folder for the project.",
   "addProject.errPath": "Select the folder to import.",
   "addProject.failed": "Failed to add the project.",
-
-  // Project detail page
   "projectDetail.title": "Project details",
   "projectDetail.back": "Back to projects",
   "projectDetail.openFolder": "Open folder",
@@ -551,6 +553,44 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   "sessions.emptyTitle": "No saved work context yet",
   "sessions.emptyDescription":
     "Save a project + tool + task combination to restore your workspace in one click.",
+
+  // Session center (manage sessions across projects / AI tools)
+  "sessionCenter.title": "Sessions",
+  "sessionCenter.description":
+    "View and manage AI sessions across projects and tools in one place.",
+  "sessionCenter.refresh": "Refresh",
+  "sessionCenter.refreshing": "Refreshing…",
+  "sessionCenter.searchLabel": "Search sessions",
+  "sessionCenter.searchPlaceholder": "Search sessions, projects or tools",
+  "sessionCenter.projectFilterLabel": "Filter by project",
+  "sessionCenter.toolFilterLabel": "Filter by tool",
+  "sessionCenter.allProjects": "All projects",
+  "sessionCenter.allTools": "All tools",
+  "sessionCenter.sortLabel": "Sort by",
+  "sessionCenter.sortActivity": "Recent activity",
+  "sessionCenter.sortName": "Name",
+  "sessionCenter.count": "{count} sessions",
+  "sessionCenter.unnamed": "Untitled session",
+  "sessionCenter.projectUnknown": "Unknown project",
+  "sessionCenter.toolUnknown": "Unknown tool",
+  "sessionCenter.loading": "Loading sessions…",
+  "sessionCenter.emptyTitle": "No sessions yet",
+  "sessionCenter.emptyDescription":
+    "Sessions you run with AI tools inside projects will appear here.",
+  "sessionCenter.noMatchTitle": "No matching sessions",
+  "sessionCenter.noMatchDescription":
+    "Try adjusting the search keyword or filters.",
+  "sessionCenter.openProject": "Open project",
+  "sessionCenter.openingProject": "Opening…",
+  "sessionCenter.opened": "Opened session \u201c{name}\u201d",
+  "sessionCenter.openProjectSuccess": "Opened \u201c{tool}\u201d in the project folder.",
+  "sessionCenter.openFailed": "Failed to open session.",
+  "sessionCenter.openProjectFailed": "Failed to open project.",
+  "sessionCenter.nativeDeletedHint":
+    "The native session has been deleted and can't be restored; you can clean up the local record.",
+  "sessionCenter.renameTitle": "Rename session",
+  "sessionCenter.refreshPartial":
+    "Sessions reloaded, but syncing native sessions for {count} tool(s) failed; the list may not be up to date.",
 
   // Restore capability
   "restoreLevel.none": "Restore not supported",
@@ -852,6 +892,9 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   "aiSession.historyStateStructureUnsupportedDesc":
     "This tool stores its history in a private or encrypted structure that VibeAcross cannot safely parse, so no sessions are listed.",
   "aiSession.loading": "Loading sessions…",
+  "aiSession.skippedNoticeTitle": "Some past sessions were not adopted",
+  "aiSession.skippedNoticeBody":
+    "{count} past session(s) belonged to a project that was removed. To avoid mistaking them for this project's sessions when a project is re-created at the same path, VibeAcross does not adopt them automatically; they remain in the tool and can be viewed there.",
   "aiSession.emptyTitle": "No past sessions yet",
   "aiSession.emptyDescription":
     "Create a new session for this tool, or start a conversation directly in the tool.",
@@ -877,10 +920,15 @@ export const enUS: Record<keyof typeof zhCN, string> = {
     "Available only when the tool supports it; by default only the display name in VibeAcross changes.",
   "aiSession.localOnlyNote":
     "Renaming by default only changes the display name in VibeAcross; the title inside the tool is not changed.",
-  "aiSession.delete": "Delete session",
+  "aiSession.nativeDeletedRenameHint":
+    "The native session has been deleted, so its title cannot be changed in the tool; the local display name can still be edited.",
   "aiSession.deleteTitle": "Delete session",
   "aiSession.deleteConfirmName": "Delete the session \"{name}\"?",
   "aiSession.deleteContext": "Project: {project}; AI tool: {tool}.",
+  "aiSession.deleteContextProject": "Project",
+  "aiSession.deleteContextTool": "Tool",
+  "aiSession.deleteContextSession": "Session",
+  "aiSession.deleteContextScope": "Scope",
   "aiSession.deleteScopeLabel": "Choose deletion scope",
   "aiSession.deleteScopeLocal": "Only the record in VibeAcross",
   "aiSession.deleteScopeLocalDesc":
@@ -899,21 +947,34 @@ export const enUS: Record<keyof typeof zhCN, string> = {
     "This session has no native session id, so the session inside the tool cannot be located and deleted.",
   "aiSession.deleteScopeNativeUnsupported":
     "{tool} does not support deleting native sessions.",
+  "aiSession.deleteScopeNativeChecking":
+    "Checking tool capabilities; native deletion is not available yet.",
+  "aiSession.deleteScopeNativeAlreadyDeleted":
+    "The native session is already marked as deleted; only the local record can be cleaned up.",
+  "aiSession.deleteLocalAction": "Delete local record",
+  "aiSession.deleteContinue": "Continue",
+  "aiSession.deleteConfirmAction": "Delete permanently",
+  "aiSession.deleteNativeConfirmTitle": "Confirm native session deletion",
+  "aiSession.deleteNativeImpact":
+    "This deletes the real session inside the AI tool, not just the record in VibeAcross, and may be irreversible.",
   "aiSession.deleteFailed": "Failed to delete session.",
   "aiSession.deletedWithNative":
     "Deleted session \"{name}\" and its native session inside the tool.",
   "aiSession.deletedLocalOnly":
     "Deleted the local record for \"{name}\" (the native session inside the tool was kept).",
   "aiSession.deletedNativeOnly":
-    "Deleted the native session inside the tool (the local record in VibeAcross was kept).",
+    "Deleted the native session inside the tool; the local record in VibeAcross was kept and marked as native-deleted.",
   "aiSession.deleteNativeAlreadyGoneOnly":
-    "The native session no longer exists in the tool; the local record in VibeAcross was kept.",
+    "The native session no longer exists in the tool; the local record in VibeAcross was kept and marked as native-deleted.",
+  "aiSession.deletePartialNativeOnly":
+    "The native session was deleted, but cleaning up the local VibeAcross record failed: {reason} You can retry the local cleanup.",
   "aiSession.deletedBothNativeAlreadyGone":
     "The native session did not exist in the tool; the local record in VibeAcross was cleaned up.",
   "aiSession.lastUsed": "Last used {time}",
   "aiSession.updatedAt": "Updated {time}",
   "aiSession.statusActive": "Restorable",
   "aiSession.statusArchived": "Archived",
+  "aiSession.statusNativeDeleted": "Native session deleted",
   "aiSession.statusMissing": "Session no longer exists",
   "aiSession.statusProjectMissing": "Project directory missing",
   "aiSession.statusUnsupported": "Restore not supported by this tool",
@@ -940,6 +1001,40 @@ export const enUS: Record<keyof typeof zhCN, string> = {
   "aiSession.noToolsTitle": "No detected tool available",
   "aiSession.noTools":
     "No AI tool has been detected yet. Detect or configure one on the Tools page first.",
+
+  // Shared context (per-project Markdown file)
+  "claudeRef.sectionTitle": "Claude Code reference entry (CLAUDE.md)",
+  "claudeRef.description":
+    "Maintain a VibeAcross-managed block in the project root CLAUDE.md that references the shared context using Claude Code's supported @.vibeacross/context.md import syntax. The context body is never copied, and your other content is never changed.",
+  "claudeRef.enableCreate": "Create CLAUDE.md and link",
+  "claudeRef.confirmEnableCreateIntro":
+    "A new CLAUDE.md file will be created in the project root:",
+  "claudeRef.conflict":
+    "CLAUDE.md was modified externally after the preview, so the write was cancelled to avoid overwriting. Reload and try again.",
+  "claudeRef.compatTitle": "Claude Code reading of the shared context",
+  "claudeRef.compatVerified":
+    "The official docs state that the @ import in CLAUDE.md inlines the shared context at startup.",
+  "claudeRef.compatUnverified":
+    "Whether this entry actually loads the shared context has not been verified in a real Claude Code environment.",
+  "claudeRef.compatNote":
+    "Creating the entry only means the reference was generated in a supported form; it does not mean it was verified in a real environment, nor that the model will read it.",
+
+  // OpenCode reference entry (instructions field of the project root opencode.json / opencode.jsonc)
+  "opencodeRef.sectionTitle": "OpenCode reference entry (opencode.json)",
+  "opencodeRef.description":
+    "Add a .vibeacross/context.md entry to the instructions field of the project root opencode.json / opencode.jsonc so new OpenCode sessions load the shared context at startup. Only this VibeAcross-managed entry is added or removed; comments, indentation and your other configuration (model, plugins, permissions, etc.) are kept as-is.",
+  "opencodeRef.enableCreate": "Create opencode.json and link",
+  "opencodeRef.confirmEnableCreateIntro":
+    "A new opencode.json file will be created in the project root:",
+  "opencodeRef.conflict":
+    "opencode.json was modified externally after the preview, so the write was cancelled to avoid overwriting. Reload and try again.",
+  "opencodeRef.compatTitle": "OpenCode reading of the shared context",
+  "opencodeRef.compatVerified":
+    "The official docs state that the instructions field of opencode.json is merged into the context, and that OpenCode does not resolve @ references in AGENTS.md, so instructions is the supported way to load it.",
+  "opencodeRef.compatUnverified":
+    "Whether this entry actually loads the shared context has not been verified in a real OpenCode session.",
+  "opencodeRef.compatNote":
+    "A successful write only means the reference config was generated in a supported form; it does not mean it was verified in a real environment, nor that the model will read it.",
 
   // In-app update
   "update.sectionTitle": "App update",

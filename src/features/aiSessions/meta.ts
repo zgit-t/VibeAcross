@@ -38,6 +38,7 @@ export const HISTORY_STATE_TONE: Record<
 /** 会话当前可恢复状态（来自真实能力与记录，而非静态演示数据）。 */
 export type AiSessionStateId =
   | "ready"
+  | "nativeDeleted"
   | "projectMissing"
   | "missing"
   | "localOnly"
@@ -56,6 +57,11 @@ const STATE_META: Record<AiSessionStateId, Omit<AiSessionState, "id">> = {
     labelKey: "aiSession.statusActive",
     tone: "success",
     canRestore: true,
+  },
+  nativeDeleted: {
+    labelKey: "aiSession.statusNativeDeleted",
+    tone: "danger",
+    canRestore: false,
   },
   projectMissing: {
     labelKey: "aiSession.statusProjectMissing",
@@ -82,8 +88,8 @@ const STATE_META: Record<AiSessionStateId, Omit<AiSessionState, "id">> = {
 /**
  * 根据会话记录、工具能力与项目目录状态推导可恢复状态。
  *
- * 优先级：项目目录不可用 → 原生会话缺失（后端确认）→ 无原生标识（仅本地记录）
- * → 工具不支持恢复 → 可恢复。
+ * 优先级：原生会话已删除 → 项目目录不可用 → 原生会话缺失（后端确认）→ 无原生标识
+ * （仅本地记录）→ 工具不支持恢复 → 可恢复。
  * `markedMissing` 用于标记「尝试恢复时后端报告原生会话已不存在」的记录。
  */
 export function getAiSessionState(
@@ -92,7 +98,9 @@ export function getAiSessionState(
   options: { projectPathExists: boolean; markedMissing?: boolean },
 ): AiSessionState {
   let id: AiSessionStateId;
-  if (!options.projectPathExists) {
+  if (session.status === "nativeDeleted") {
+    id = "nativeDeleted";
+  } else if (!options.projectPathExists) {
     id = "projectMissing";
   } else if (options.markedMissing) {
     id = "missing";

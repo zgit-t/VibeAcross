@@ -9,6 +9,7 @@ import type {
 export type OpenSessionBlockReason =
   | "projectGone"
   | "pathMissing"
+  | "nativeDeleted"
   | "noNativeId"
   | "toolUnavailable"
   | "unsupported"
@@ -34,6 +35,9 @@ export function sessionOpenability(
 ): OpenSessionAvailability {
   if (!project) {
     return { canOpen: false, reason: "projectGone" };
+  }
+  if (session.status === "nativeDeleted") {
+    return { canOpen: false, reason: "nativeDeleted" };
   }
   if (!session.projectPathExists) {
     return { canOpen: false, reason: "pathMissing" };

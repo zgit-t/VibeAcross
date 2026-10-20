@@ -784,3 +784,352 @@ fn tasks_and_settings_persist_across_reopen() {
     assert_eq!(loaded.language.as_deref(), Some("en-US"));
     assert!(loaded.auto_restore_last_context);
 }
+
+// --- 阶段 15：记忆系统迁移真实性核验 ---------------------------------------------
+
+fn column_default(conn: &rusqlite::Connection, table: &str, column: &str) -> Option<String> {
+    conn.query_row(
+        "SELECT dflt_value FROM pragma_table_info(?1) WHERE name = ?2",
+        [table, column],
+        |row| row.get(0),
+    )
+    .unwrap()
+}
+
+fn table_exists(conn: &rusqlite::Connection, table: &str) -> bool {
+    conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+        [table],
+        |row| row.get::<_, i64>(0),
+    )
+    .unwrap()
+        == 1
+}
+
+/// 从真实的「版本 8」（v1.3.1 发布库形态）升级：既有项目 / 工具安装 / 关联 / 会话
+/// 必须保持不变，同时补齐记忆相关表与晋升字段。
+#[test]
+fn memory_migration_upgrades_v8_library_and_preserves_data() {
+    let workspace = temp_dir();
+    let db_path = workspace.path().join("v8.db");
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    for sql in [
+        include_str!("../migrations/0001_init.sql"),
+        include_str!("../migrations/0002_tools.sql"),
+        include_str!("../migrations/0003_project_tools.sql"),
+        include_str!("../migrations/0004_tasks_activity.sql"),
+        include_str!("../migrations/0005_workspace_sessions.sql"),
+        include_str!("../migrations/0006_drop_activity.sql"),
+        include_str!("../migrations/0007_session_model.sql"),
+        include_str!("../migrations/0008_project_current_tool.sql"),
+    ] {
+        conn.execute_batch(sql).unwrap();
+    }
+    conn.pragma_update(None, "user_version", 8).unwrap();
+
+    let now = "2026-01-01T00:00:00.000Z";
+    conn.execute(
+        "INSERT INTO projects
+            (id, name, path, created_at, updated_at, description, is_favorite, default_tool_id)
+         VALUES ('p1', '既有项目', 'C:\\legacy', ?1, ?1, NULL, 0, 'tool-a')",
+        [now],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO tool_installations
+            (id, tool_id, name, vendor, description, tool_type, source, status, is_custom, is_default, created_at, updated_at)
+         VALUES ('tool-a', 'opencode', 'OpenCode', '', '', 'cli', 'system', 'ready', 0, 1, ?1, ?1)",
+        [now],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO project_tools (id, project_id, tool_id, created_at, updated_at)
+         VALUES ('pt1', 'p1', 'tool-a', ?1, ?1)",
+        [now],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO sessions
+            (id, project_tool_id, display_name, native_session_id, status, created_at, updated_at)
+         VALUES ('s1', 'pt1', '既有会话', 'native-1', 'active', ?1, ?1)",
+        [now],
+    )
+    .unwrap();
+
+    migrations::run(&conn).unwrap();
+
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, migrations::latest_version());
+    assert_eq!(version, 13, "阶段 16 的发布库应迁移到版本 13");
+
+    // 记忆相关表补齐。
+    assert!(table_exists(&conn, "memory_files"), "memory_files 应被创建");
+    assert!(
+        table_exists(&conn, "memory_records"),
+        "memory_records 应被创建"
+    );
+    assert!(
+        table_exists(&conn, "memory_collection"),
+        "memory_collection 应被创建"
+    );
+    assert!(
+        table_exists(&conn, "native_session_claims"),
+        "native_session_claims 应被创建"
+    );
+    assert!(
+        table_exists(&conn, "context_reference_entries"),
+        "context_reference_entries 应被创建"
+    );
+
+    // 晋升字段存在且默认值为 'none'；晋升索引存在。
+    assert_eq!(
+        column_default(&conn, "memory_records", "promotion_state").as_deref(),
+        Some("'none'")
+    );
+    for column in ["promoted_at", "promotion_error"] {
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('memory_records') WHERE name = ?1",
+                [column],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "memory_records 应包含 {column} 列");
+    }
+    let index: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_memory_records_promotion'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(index, 1, "晋升索引应存在");
+
+    // 既有业务数据完整保留。
+    let project_name: String = conn
+        .query_row("SELECT name FROM projects WHERE id = 'p1'", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(project_name, "既有项目");
+    let native: String = conn
+        .query_row(
+            "SELECT native_session_id FROM sessions WHERE id = 's1'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(native, "native-1");
+    let tool: String = conn
+        .query_row(
+            "SELECT tool_id FROM project_tools WHERE id = 'pt1'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(tool, "tool-a");
+
+    // 既有会话的原生标识被回填为「认领」，使升级后同路径重建项目不会误接管旧会话。
+    let (claim_tool, claim_project): (String, String) = conn
+        .query_row(
+            "SELECT tool_id, project_id FROM native_session_claims
+             WHERE native_session_id = 'native-1'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(claim_tool, "opencode");
+    assert_eq!(claim_project, "p1");
+
+    // 新表初始为空。
+    for table in ["memory_files", "memory_records", "memory_collection"] {
+        let count: i64 = conn
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 0, "{table} 初始应为空");
+    }
+
+    // 重复启动不重复执行迁移，数据不变。
+    migrations::run(&conn).unwrap();
+    let again: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(again, migrations::latest_version());
+}
+
+/// 全新数据库：一次性建到最新版本，并具备正确的默认值与索引。
+#[test]
+fn fresh_database_initializes_memory_schema_with_defaults() {
+    let db = Database::open_in_memory().unwrap();
+    let conn = db.conn().unwrap();
+
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, migrations::latest_version());
+
+    for table in ["memory_files", "memory_records", "memory_collection"] {
+        assert!(table_exists(&conn, table), "{table} 应存在");
+    }
+    assert_eq!(
+        column_default(&conn, "memory_records", "promotion_state").as_deref(),
+        Some("'none'")
+    );
+
+    // 插入一条不含晋升字段的记录：默认应为 none / 未晋升。
+    let now = "2026-01-01T00:00:00.000Z";
+    conn.execute(
+        "INSERT INTO memory_records
+            (id, project_id, tool_id, native_session_id, record_kind, content_hash, dedup_key, collected_at, created_at, updated_at)
+         VALUES ('r1', 'p1', 'opencode', 'n1', 'session_progress', 'h', 'd', ?1, ?1, ?1)",
+        [now],
+    )
+    .unwrap_err(); // projects(p1) 不存在且外键开启时应被拒绝
+    conn.execute(
+        "INSERT INTO projects
+            (id, name, path, created_at, updated_at, description, is_favorite)
+         VALUES ('p1', 'P', 'C:\\p', ?1, ?1, NULL, 0)",
+        [now],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO memory_records
+            (id, project_id, tool_id, native_session_id, record_kind, content_hash, dedup_key, collected_at, created_at, updated_at)
+         VALUES ('r1', 'p1', 'opencode', 'n1', 'session_progress', 'h', 'd', ?1, ?1, ?1)",
+        [now],
+    )
+    .unwrap();
+    let (state, promoted_at, error): (String, Option<String>, Option<String>) = conn
+        .query_row(
+            "SELECT promotion_state, promoted_at, promotion_error FROM memory_records WHERE id = 'r1'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(state, "none");
+    assert!(promoted_at.is_none());
+    assert!(error.is_none());
+    assert_eq!(column_default(&conn, "memory_records", "state").as_deref(), Some("'candidate'"));
+}
+
+/// 回填原生会话归属时，存在歧义的历史数据（同一 (工具, 原生会话) 同时挂在
+/// 多个项目下）不得被静默认领给任意一个项目；无歧义的记录才回填。
+#[test]
+fn native_claims_backfill_ignores_ambiguous_history() {
+    let workspace = temp_dir();
+    let db_path = workspace.path().join("v11-ambiguous.db");
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    for sql in [
+        include_str!("../migrations/0001_init.sql"),
+        include_str!("../migrations/0002_tools.sql"),
+        include_str!("../migrations/0003_project_tools.sql"),
+        include_str!("../migrations/0004_tasks_activity.sql"),
+        include_str!("../migrations/0005_workspace_sessions.sql"),
+        include_str!("../migrations/0006_drop_activity.sql"),
+        include_str!("../migrations/0007_session_model.sql"),
+        include_str!("../migrations/0008_project_current_tool.sql"),
+        include_str!("../migrations/0009_memory_files.sql"),
+        include_str!("../migrations/0010_memory_records.sql"),
+        include_str!("../migrations/0011_memory_promotion.sql"),
+    ] {
+        conn.execute_batch(sql).unwrap();
+    }
+    conn.pragma_update(None, "user_version", 11).unwrap();
+
+    let now = "2026-01-01T00:00:00.000Z";
+    for id in ["p1", "p2"] {
+        conn.execute(
+            "INSERT INTO projects
+                (id, name, path, created_at, updated_at, description, is_favorite)
+             VALUES (?1, ?1, ?1, ?2, ?2, NULL, 0)",
+            rusqlite::params![id, now],
+        )
+        .unwrap();
+    }
+    conn.execute(
+        "INSERT INTO tool_installations
+            (id, tool_id, name, vendor, description, tool_type, source, status, is_custom, is_default, created_at, updated_at)
+         VALUES ('ti1', 'opencode', 'OpenCode', '', '', 'cli', 'system', 'ready', 0, 0, ?1, ?1)",
+        [now],
+    )
+    .unwrap();
+    for (id, project) in [("pt1", "p1"), ("pt2", "p2")] {
+        conn.execute(
+            "INSERT INTO project_tools (id, project_id, tool_id, created_at, updated_at)
+             VALUES (?1, ?2, 'ti1', ?3, ?3)",
+            rusqlite::params![id, project, now],
+        )
+        .unwrap();
+    }
+    // 同一原生会话同时挂在两个项目下（历史缺陷遗留的歧义数据）。
+    conn.execute(
+        "INSERT INTO sessions (id, project_tool_id, display_name, native_session_id, status, created_at, updated_at)
+         VALUES ('s1', 'pt1', 'A 的会话', 'native-dup', 'active', ?1, ?1),
+                ('s2', 'pt2', 'B 的会话', 'native-dup', 'active', ?1, ?1)",
+        [now],
+    )
+    .unwrap();
+    // 无歧义：只属于 p1。
+    conn.execute(
+        "INSERT INTO sessions (id, project_tool_id, display_name, native_session_id, status, created_at, updated_at)
+         VALUES ('s3', 'pt1', '独有会话', 'native-solo', 'active', ?1, ?1)",
+        [now],
+    )
+    .unwrap();
+
+    migrations::run(&conn).unwrap();
+    assert_eq!(
+        conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+            .unwrap(),
+        migrations::latest_version()
+    );
+
+    // 歧义记录不得被静默认领给任意项目。
+    let ambiguous: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM native_session_claims WHERE native_session_id = 'native-dup'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(ambiguous, 0, "歧义的原生会话不应被静默认领");
+
+    // 无歧义记录正常回填，且归属正确。
+    let (tool, project): (String, String) = conn
+        .query_row(
+            "SELECT tool_id, project_id FROM native_session_claims
+             WHERE native_session_id = 'native-solo'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(tool, "opencode");
+    assert_eq!(project, "p1");
+
+    // 原始会话数据一字未动。
+    let sessions: i64 = conn
+        .query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(sessions, 3);
+}
+
+/// 迁移失败时必须如实报错、事务回滚，且不留下半迁移的版本号或残表。
+#[test]
+fn failed_migration_reports_error_and_rolls_back_version() {
+    let db = Database::open_in_memory().unwrap();
+    let conn = db.conn().unwrap();
+
+    // 破坏前置条件：移除 memory_records，使 0011 的 ALTER TABLE 必然失败。
+    conn.execute_batch("DROP TABLE memory_records").unwrap();
+    conn.pragma_update(None, "user_version", 10).unwrap();
+
+    let error = migrations::run(&conn).unwrap_err();
+    assert_eq!(error.code, "MIGRATION_FAILED");
+
+    // 版本号未被推进，失败的迁移未留下任何残表。
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 10, "失败的迁移不得推进版本号");
+    assert!(!table_exists(&conn, "memory_records"), "失败迁移不应留下残表");
+}

@@ -8,9 +8,11 @@
 //! 边界：
 //!  - 不读取 / 修改任何第三方工具的内部数据库或会话文件。
 //!  - 不保存对话内容、文件内容、密钥、访问令牌或环境变量。
-//!  - 删除会话只删除 VibeAcross 自身的记录，不影响工具内部的原生会话。
+//!  - 本模块的 [`delete`] 只删除 VibeAcross 自身的记录；原生删除由 `native`
+//!    模块按明确的删除范围协调，绝不把本地清理误认为原生删除。
 
 use crate::error::AppError;
+use crate::native_claims;
 use crate::project_tools;
 use crate::projects;
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ValueRef};
@@ -24,11 +26,15 @@ const DISPLAY_NAME_MAX: usize = 120;
 const NATIVE_ID_MAX: usize = 200;
 
 /// 会话状态。
+///
+/// `NativeDeleted` 只由原生删除流程写入：工具中的原生会话已被确认删除，但用户选择
+/// 保留 VibeAcross 本地记录。它不是用户可编辑状态，也不能再伪装成可恢复的会话。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SessionStatus {
     Active,
     Archived,
+    NativeDeleted,
 }
 
 impl SessionStatus {
@@ -36,6 +42,7 @@ impl SessionStatus {
         match self {
             SessionStatus::Active => "active",
             SessionStatus::Archived => "archived",
+            SessionStatus::NativeDeleted => "nativeDeleted",
         }
     }
 
@@ -43,6 +50,7 @@ impl SessionStatus {
         match value {
             "active" => Some(SessionStatus::Active),
             "archived" => Some(SessionStatus::Archived),
+            "nativeDeleted" => Some(SessionStatus::NativeDeleted),
             _ => None,
         }
     }
@@ -278,10 +286,19 @@ pub fn create(conn: &Connection, input: SessionInput) -> Result<Session, AppErro
     let working_directory =
         resolve_working_directory(&project.path, input.working_directory.as_deref())?;
     let association = project_tools::ensure(conn, project_id, tool_id)?;
-
     let id = uuid::Uuid::new_v4().to_string();
     let now = crate::now_iso();
-    conn.execute(
+
+    // 归属登记与会话行必须原子写入：若登记成功但随后的会话写入失败（唯一约束、
+    // IO 或进程中断），必须一并回滚，否则会残留「已认领却无会话」的归属，
+    // 永久阻塞该原生会话被其它项目使用。
+    let tx = conn.unchecked_transaction()?;
+    if let Some(native_id) = native_session_id.as_deref() {
+        if !record_native_claim(&tx, &association.id, native_id)? {
+            return Err(claimed_elsewhere_err());
+        }
+    }
+    tx.execute(
         "INSERT INTO sessions
             (id, project_tool_id, display_name, native_session_id, working_directory,
              status, created_at, updated_at, last_used_at)
@@ -308,6 +325,7 @@ pub fn create(conn: &Connection, input: SessionInput) -> Result<Session, AppErro
         }
         other => other.into(),
     })?;
+    tx.commit()?;
     get(conn, &id)
 }
 
@@ -328,6 +346,34 @@ pub fn find_by_native(
     }
 }
 
+/// 登记一条原生会话的归属（以项目身份为单位，而非路径 / 名称）。
+///
+/// 仅在「项目 × 工具」关联可解析时执行；已属于同一项目身份时幂等，已被其它项目
+/// 身份（含已被移除的项目）认领时不夺取。这是避免同路径重建项目误接管旧会话的关键。
+///
+/// 返回 `true` 表示该原生会话现归属于本项目身份；`false` 表示已被**其它**项目身份
+/// 认领——调用方据此拒绝把这条原生会话写入本项目，杜绝跨项目重复归属。
+fn record_native_claim(
+    conn: &Connection,
+    project_tool_id: &str,
+    native_session_id: &str,
+) -> Result<bool, AppError> {
+    match native_claims::association_identity(conn, project_tool_id)? {
+        Some((tool_id, project_id)) => {
+            native_claims::claim(conn, &tool_id, native_session_id, &project_id)
+        }
+        // 关联不存在（例如刚被删除）：无从登记，按「可写入」放行，交由后续校验处理。
+        None => Ok(true),
+    }
+}
+
+fn claimed_elsewhere_err() -> AppError {
+    AppError::new(
+        "SESSION_NATIVE_CLAIMED_ELSEWHERE",
+        "该原生会话已归属于另一个项目，不能在当前项目下重复关联。",
+    )
+}
+
 /// 直接插入一条带原生会话标识的会话记录。
 ///
 /// 供原生适配层在工具已真实创建会话后调用；关联必须已存在（由调用方保证）。
@@ -343,7 +389,14 @@ pub fn insert_native(
         .ok_or_else(|| AppError::new("SESSION_NATIVE_ID_REQUIRED", "原生会话标识不能为空。"))?;
     let id = uuid::Uuid::new_v4().to_string();
     let now = crate::now_iso();
-    conn.execute(
+
+    // 与 create 同理：归属登记与会话行原子写入，失败一并回滚，避免残留
+    // 「已认领却无会话」的归属记录。
+    let tx = conn.unchecked_transaction()?;
+    if !record_native_claim(&tx, project_tool_id, &native_session_id)? {
+        return Err(claimed_elsewhere_err());
+    }
+    tx.execute(
         "INSERT INTO sessions
             (id, project_tool_id, display_name, native_session_id, working_directory,
              status, created_at, updated_at, last_used_at)
@@ -369,6 +422,7 @@ pub fn insert_native(
         }
         other => other.into(),
     })?;
+    tx.commit()?;
     get(conn, &id)
 }
 
@@ -381,6 +435,9 @@ pub fn upsert_native(
     working_directory: Option<&str>,
 ) -> Result<Session, AppError> {
     if let Some(existing) = find_by_native(conn, project_tool_id, native_session_id)? {
+        // 既有本地记录：登记归属（幂等）后原样返回；即使归属登记因历史数据不一致
+        // 而未归本项目，也不改动既有记录，避免破坏用户可见的本地会话。
+        let _ = record_native_claim(conn, project_tool_id, native_session_id)?;
         return Ok(existing);
     }
     insert_native(
@@ -403,16 +460,41 @@ pub fn rename(conn: &Connection, id: &str, display_name_raw: &str) -> Result<Ses
     get(conn, id)
 }
 
-/// 设置会话状态（active / archived）。
+/// 设置用户可编辑的会话状态（active / archived）。
+///
+/// `nativeDeleted` 是删除流程产生的只读状态，不能通过此接口由前端设置。
 pub fn set_status(
     conn: &Connection,
     id: &str,
     status: SessionStatus,
 ) -> Result<Session, AppError> {
+    if status == SessionStatus::NativeDeleted {
+        return Err(AppError::new(
+            "SESSION_STATUS_INVALID",
+            "原生会话已删除状态只能由删除流程设置。",
+        ));
+    }
     get(conn, id)?;
     conn.execute(
         "UPDATE sessions SET status = ?1, updated_at = ?2 WHERE id = ?3",
         params![status.as_str(), crate::now_iso(), id],
+    )?;
+    get(conn, id)
+}
+
+/// 将本地记录标记为「原生会话已删除」，保留记录本身。
+///
+/// 仅由原生删除成功后的后端流程调用。使用现有 `status` 字段即可表达该状态，
+/// 不需要新增迁移或破坏既有数据结构。
+pub fn mark_native_deleted(conn: &Connection, id: &str) -> Result<Session, AppError> {
+    get(conn, id)?;
+    conn.execute(
+        "UPDATE sessions SET status = ?1, updated_at = ?2 WHERE id = ?3",
+        params![
+            SessionStatus::NativeDeleted.as_str(),
+            crate::now_iso(),
+            id
+        ],
     )?;
     get(conn, id)
 }

@@ -94,7 +94,7 @@ pub fn list_with_state(ctx: &ToolContext) -> Result<HistoryListing, AppError> {
 ///
 /// 优先使用 `CLAUDE_CONFIG_DIR`（支持逗号分隔的多个根）；否则回退到用户目录下的
 /// `~/.claude`。不硬编码绝对路径，也不递归扫描磁盘的其它位置。
-fn config_roots() -> Result<Vec<PathBuf>, AppError> {
+pub(crate) fn config_roots() -> Result<Vec<PathBuf>, AppError> {
     if let Some(value) = std::env::var_os("CLAUDE_CONFIG_DIR") {
         let roots: Vec<PathBuf> = value
             .to_string_lossy()
@@ -291,7 +291,7 @@ fn string_field(value: &Value, key: &str) -> Option<String> {
     value.get(key).and_then(Value::as_str).map(str::to_string)
 }
 
-fn is_jsonl(path: &Path) -> bool {
+pub(crate) fn is_jsonl(path: &Path) -> bool {
     path.extension()
         .and_then(|value| value.to_str())
         .map(|value| value.eq_ignore_ascii_case("jsonl"))
@@ -310,7 +310,22 @@ fn file_modified_iso(path: &Path) -> Option<String> {
 /// （编码规则为「非字母数字 → `-`」，与 Claude Code 一致，且它是**有损**的，
 /// 因此只作为兜底，绝不据此反转出真实路径）。
 fn session_matches(working_dir: &Path, info: &NativeSessionInfo, project_dir: &Path) -> bool {
-    match info.directory.as_deref() {
+    cwd_matches_project(working_dir, info.directory.as_deref(), project_dir)
+}
+
+/// 判断某转录的 `cwd` 是否属于给定项目目录。
+///
+/// 优先使用转录中权威的 `cwd` 字段比对；`cwd` 缺失时才退化到项目目录名的编码比对
+/// （编码规则为「非字母数字 → `-`」，与 Claude Code 一致，且它是**有损**的，
+/// 因此只作为兜底，绝不据此反转出真实路径）。
+///
+/// 供自动采集适配器复用，确保「会话归属项目」的判定口径与原生会话枚举完全一致。
+pub(crate) fn cwd_matches_project(
+    working_dir: &Path,
+    cwd: Option<&str>,
+    project_dir: &Path,
+) -> bool {
+    match cwd {
         Some(directory) if !directory.trim().is_empty() => {
             normalize_path(directory) == normalize_path(&working_dir.to_string_lossy())
         }
@@ -325,13 +340,13 @@ fn session_matches(working_dir: &Path, info: &NativeSessionInfo, project_dir: &P
 }
 
 /// 将绝对路径编码为 Claude Code 的项目目录名（非字母数字字符替换为 `-`）。
-fn encode_dir_name(path: &str) -> String {
+pub(crate) fn encode_dir_name(path: &str) -> String {
     path.chars()
         .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '-' })
         .collect()
 }
 
-fn normalize_path(path: &str) -> String {
+pub(crate) fn normalize_path(path: &str) -> String {
     path.replace('\\', "/")
         .trim_end_matches('/')
         .to_ascii_lowercase()

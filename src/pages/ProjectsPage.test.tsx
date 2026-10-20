@@ -127,7 +127,6 @@ const sessionsApi = sessionsService as unknown as {
   restoreNativeSession: ReturnType<typeof vi.fn>;
   renameNativeSession: ReturnType<typeof vi.fn>;
   setSessionStatus: ReturnType<typeof vi.fn>;
-  deleteSessionScoped: ReturnType<typeof vi.fn>;
 };
 const settingsApi = settingsService as unknown as {
   getSettings: ReturnType<typeof vi.fn>;
@@ -279,6 +278,7 @@ beforeEach(() => {
   sessionsApi.syncNativeSessions.mockResolvedValue({
     state: "available",
     sessions: [],
+    skipped: 0,
   });
   sessionsApi.listSessions.mockResolvedValue([]);
   sessionsApi.listNativeSessions.mockResolvedValue([]);
@@ -286,7 +286,6 @@ beforeEach(() => {
   sessionsApi.restoreNativeSession.mockResolvedValue({});
   sessionsApi.renameNativeSession.mockResolvedValue(undefined);
   sessionsApi.setSessionStatus.mockResolvedValue(undefined);
-  sessionsApi.deleteSessionScoped.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -420,8 +419,11 @@ describe("项目详情：居中模态弹窗", () => {
     const run = await within(dialog).findByRole("button", { name: "运行" });
 
     // 让历史会话读取挂起，验证读取期间的加载动画。
-    let resolveSync: (value: { state: "available"; sessions: unknown[] }) => void =
-      () => undefined;
+    let resolveSync: (value: {
+      state: "available";
+      sessions: unknown[];
+      skipped: number;
+    }) => void = () => undefined;
     sessionsApi.syncNativeSessions.mockReturnValue(
       new Promise((resolve) => {
         resolveSync = resolve;
@@ -438,7 +440,7 @@ describe("项目详情：居中模态弹窗", () => {
       ),
     );
 
-    resolveSync({ state: "available", sessions: [] });
+    resolveSync({ state: "available", sessions: [], skipped: 0 });
     expect(await screen.findByText("还没有历史会话")).toBeInTheDocument();
     expect(screen.queryByText("正在读取会话…")).not.toBeInTheDocument();
   });

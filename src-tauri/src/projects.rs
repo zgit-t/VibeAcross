@@ -74,7 +74,7 @@ pub fn validate_project_name(raw: &str) -> Result<String, AppError> {
 }
 
 /// 去除 Windows `\\?\` 扩展长度前缀，得到可读路径。
-fn strip_extended_prefix(path: &Path) -> PathBuf {
+pub(crate) fn strip_extended_prefix(path: &Path) -> PathBuf {
     let text = path.to_string_lossy();
     if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
         return PathBuf::from(format!(r"\\{rest}"));
@@ -342,6 +342,21 @@ pub fn remove_project(conn: &Connection, id: &str) -> Result<(), AppError> {
         "DELETE FROM workspace_sessions WHERE project_id = ?1",
         [id],
     )?;
+    // 记忆文件元数据不含外键，需在删除项目前显式清理项目级登记，避免留下指向
+    // 已不存在归属的孤立记录（磁盘文件保持不动）。会话级记忆已退役，不再有
+    // owner_kind='session' 的有效写入路径，故不在此清理历史会话登记。
+    tx.execute(
+        "DELETE FROM memory_files WHERE owner_kind = 'project' AND owner_id = ?1",
+        [id],
+    )?;
+    // 共享上下文引用入口登记表同样不含外键，需显式清理。
+    tx.execute(
+        "DELETE FROM context_reference_entries WHERE project_id = ?1",
+        [id],
+    )?;
+    // 共享上下文的停用标记存于 app_settings（键含项目 ID），属纯元数据；
+    // 仅清理该项目的键，不影响磁盘文件或用户内容。
+    crate::shared_context::forget_disabled(&tx, id)?;
     let affected = tx.execute("DELETE FROM projects WHERE id = ?1", [id])?;
     if affected == 0 {
         return Err(AppError::new("PROJECT_NOT_FOUND", "未找到该项目记录。"));
@@ -351,7 +366,7 @@ pub fn remove_project(conn: &Connection, id: &str) -> Result<(), AppError> {
 }
 
 /// 大小写不敏感地比较两个路径是否指向同一位置（Windows 语义）。
-fn paths_equal(a: &Path, b: &Path) -> bool {
+pub(crate) fn paths_equal(a: &Path, b: &Path) -> bool {
     let normalize = |value: &Path| {
         value
             .to_string_lossy()

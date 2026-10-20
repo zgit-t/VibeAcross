@@ -408,6 +408,11 @@ export interface NativeSessionCapabilities {
 export interface NativeSyncOutcome {
   state: HistoryQueryState;
   sessions: AiSession[];
+  /**
+   * 因已归属于其它项目身份（含已被移除的项目）而被跳过的原生会话数量。
+   * 这些会话仍保留在工具中，只是不会被自动归入当前项目。
+   */
+  skipped: number;
 }
 
 /** 工具中的一条原生会话的公开信息（不含任何对话内容）。 */
@@ -433,8 +438,11 @@ export interface ProjectTool {
   sessionCount: number;
 }
 
-/** 会话状态。与 Rust 后端 `sessions::SessionStatus` 一致。 */
-export type AiSessionStatus = "active" | "archived";
+/**
+ * 会话状态。与 Rust 后端 `sessions::SessionStatus` 一致。
+ * `nativeDeleted` 表示工具中的原生会话已删除、仅保留本地记录，不能伪装为可恢复。
+ */
+export type AiSessionStatus = "active" | "archived" | "nativeDeleted";
 
 /** AI 工具会话记录。与 Rust 后端 `sessions::Session` 一致。 */
 export interface AiSession {
@@ -479,7 +487,7 @@ export interface NativeCreateOutcome {
   native: NativeSessionInfo;
   launch: LaunchResult | null;
   /** 启动失败时的后端错误；成功或未请求启动时为 null。 */
-  launchError: { code: string; message: string } | null;
+  launchError: BackendErrorInfo | null;
 }
 
 /** 重命名结果：是否同时修改了原生标题。 */
@@ -497,7 +505,7 @@ export type DeleteScope = "local" | "native" | "both";
 
 /**
  * 删除会话的结果。与 Rust 后端 `native::DeleteOutcome` 一致。
- * 如实反映本次实际删除的范围，不虚报成功。
+ * 原生删除成功但本地清理失败时，后端返回部分成功结果而不是伪报整体失败。
  */
 export interface SessionDeleteOutcome {
   scope: DeleteScope;
@@ -507,6 +515,16 @@ export interface SessionDeleteOutcome {
   nativeAlreadyGone: boolean;
   /** VibeAcross 本地记录是否已清理。 */
   localDeleted: boolean;
+  /** 原生删除成功，但本地状态更新 / 记录清理失败。 */
+  localCleanupFailed: boolean;
+  /** 部分成功时可诊断的本地失败原因。 */
+  localCleanupError: string | null;
+}
+
+/** 后端错误的结构化表示（稳定 code + 面向用户的消息）。 */
+export interface BackendErrorInfo {
+  code: string;
+  message: string;
 }
 
 /** 备份中记录的数据规模。与 Rust 后端 `backup::BackupCounts` 一致。 */

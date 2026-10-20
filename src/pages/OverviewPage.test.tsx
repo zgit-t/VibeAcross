@@ -292,6 +292,7 @@ beforeEach(() => {
   sessionsApi.syncNativeSessions.mockResolvedValue({
     state: "available",
     sessions: [],
+    skipped: 0,
   });
   sessionsApi.listNativeSessions.mockResolvedValue([]);
   sessionsApi.createNativeSession.mockResolvedValue({});

@@ -81,7 +81,7 @@ function capabilities(
 }
 
 function syncResult(sessions: AiSession[]): NativeSyncOutcome {
-  return { state: "available", sessions };
+  return { state: "available", sessions, skipped: 0 };
 }
 
 function tool(id: string, toolId: string, name: string): ToolEntry {

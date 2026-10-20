@@ -10,6 +10,7 @@ import type {
   NativeSupport,
   NativeSyncOutcome,
   Project,
+  SessionDeleteOutcome,
   ToolEntry,
 } from "../../types/domain";
 import { RunSessionDialog } from "./RunSessionDialog";
@@ -73,7 +74,21 @@ function capabilities(
 }
 
 function syncResult(sessions: AiSession[]): NativeSyncOutcome {
-  return { state: "available", sessions };
+  return { state: "available", sessions, skipped: 0 };
+}
+
+function deleteOutcome(
+  overrides: Partial<SessionDeleteOutcome> = {},
+): SessionDeleteOutcome {
+  return {
+    scope: "local",
+    nativeDeleted: false,
+    nativeAlreadyGone: false,
+    localDeleted: true,
+    localCleanupFailed: false,
+    localCleanupError: null,
+    ...overrides,
+  };
 }
 
 function tool(id: string, toolId: string, name: string): ToolEntry {
@@ -375,41 +390,22 @@ describe("RunSessionDialog 会话隔离与操作", () => {
     expect(api.createNativeSession).not.toHaveBeenCalled();
   });
 
-  it("默认选中「仅删除 VibeAcross 中的记录」，并仅按所选范围执行", async () => {
+  it("在运行会话界面删除本地记录后移除该行", async () => {
     api.sessionCapabilities.mockResolvedValue(capabilities("opencode"));
     api.syncNativeSessions.mockResolvedValue(
       syncResult([session("x1", "install-x", "X1")]),
     );
-    api.deleteSessionScoped.mockResolvedValue({
-      scope: "local",
-      nativeDeleted: false,
-      nativeAlreadyGone: false,
-      localDeleted: true,
-    });
+    api.deleteSessionScoped.mockResolvedValue(deleteOutcome());
 
     renderDialog(toolX.id);
 
-    const row = (await screen.findByText("X1")).closest("li") as HTMLElement;
-    fireEvent.click(within(row).getByRole("button", { name: "删除会话" }));
-
-    // 对话框展示会话名称与三种范围。
-    expect(
-      await screen.findByText(/确定要删除会话「X1」吗/),
-    ).toBeInTheDocument();
-    const local = screen.getByRole("radio", {
-      name: /仅删除 VibeAcross 中的记录/,
-    });
-    const native = screen.getByRole("radio", {
-      name: /仅删除 AI 工具中的会话/,
-    });
-    const both = screen.getByRole("radio", { name: /同时删除两者/ });
-    // 默认选中风险最低的「仅本地记录」，不得默认选中会删除原生会话的选项。
-    expect(local).toBeChecked();
-    expect(native).not.toBeChecked();
-    expect(both).not.toBeChecked();
-    expect(api.deleteSessionScoped).not.toHaveBeenCalled();
-
+    await screen.findByText("X1");
     fireEvent.click(screen.getByRole("button", { name: "删除" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "删除会话" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "删除本地记录" }),
+    );
 
     await waitFor(() =>
       expect(api.deleteSessionScoped).toHaveBeenCalledWith("x1", "local"),
@@ -417,142 +413,49 @@ describe("RunSessionDialog 会话隔离与操作", () => {
     await waitFor(() =>
       expect(screen.queryByText("X1")).not.toBeInTheDocument(),
     );
+    expect(
+      await screen.findByText(/已删除会话「X1」的本地记录/),
+    ).toBeInTheDocument();
   });
 
-  it("选择「仅删除 AI 工具中的会话」时保留本地记录并标记为已不存在", async () => {
+  it("原生删除在运行会话界面同样需要二次确认", async () => {
     api.sessionCapabilities.mockResolvedValue(capabilities("opencode"));
     api.syncNativeSessions.mockResolvedValue(
       syncResult([session("x1", "install-x", "X1")]),
     );
-    api.deleteSessionScoped.mockResolvedValue({
-      scope: "native",
-      nativeDeleted: true,
-      nativeAlreadyGone: false,
-      localDeleted: false,
-    });
+    api.deleteSessionScoped.mockResolvedValue(
+      deleteOutcome({
+        scope: "native",
+        nativeDeleted: true,
+        localDeleted: false,
+      }),
+    );
 
     renderDialog(toolX.id);
 
-    const row = (await screen.findByText("X1")).closest("li") as HTMLElement;
-    fireEvent.click(within(row).getByRole("button", { name: "删除会话" }));
-    await screen.findByText(/确定要删除会话「X1」吗/);
-
-    fireEvent.click(
-      screen.getByRole("radio", { name: /仅删除 AI 工具中的会话/ }),
-    );
+    await screen.findByText("X1");
     fireEvent.click(screen.getByRole("button", { name: "删除" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "删除会话" });
+    fireEvent.click(
+      within(dialog).getByRole("radio", {
+        name: /仅删除 AI 工具中的会话/,
+      }),
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "继续" }));
+    expect(api.deleteSessionScoped).not.toHaveBeenCalled();
+
+    const confirm = await screen.findByRole("dialog", {
+      name: "确认删除原生会话",
+    });
+    fireEvent.click(
+      within(confirm).getByRole("button", { name: "确认删除" }),
+    );
 
     await waitFor(() =>
       expect(api.deleteSessionScoped).toHaveBeenCalledWith("x1", "native"),
     );
-    // 本地记录保留 → 行仍在，并标记为「会话已不存在」。
-    expect(screen.getByText("X1")).toBeInTheDocument();
-    expect(await screen.findByText("会话已不存在")).toBeInTheDocument();
-  });
-
-  it("选择「同时删除两者」时按 both 范围执行并移除本地记录", async () => {
-    api.sessionCapabilities.mockResolvedValue(capabilities("opencode"));
-    api.syncNativeSessions.mockResolvedValue(
-      syncResult([session("x1", "install-x", "X1")]),
-    );
-    api.deleteSessionScoped.mockResolvedValue({
-      scope: "both",
-      nativeDeleted: true,
-      nativeAlreadyGone: false,
-      localDeleted: true,
-    });
-
-    renderDialog(toolX.id);
-
-    const row = (await screen.findByText("X1")).closest("li") as HTMLElement;
-    fireEvent.click(within(row).getByRole("button", { name: "删除会话" }));
-    await screen.findByText(/确定要删除会话「X1」吗/);
-
-    fireEvent.click(screen.getByRole("radio", { name: /同时删除两者/ }));
-    fireEvent.click(screen.getByRole("button", { name: "删除" }));
-
-    await waitFor(() =>
-      expect(api.deleteSessionScoped).toHaveBeenCalledWith("x1", "both"),
-    );
-    await waitFor(() =>
-      expect(screen.queryByText("X1")).not.toBeInTheDocument(),
-    );
-  });
-
-  it("不支持原生删除的工具会禁用原生相关选项并说明原因", async () => {
-    api.sessionCapabilities.mockResolvedValue(
-      capabilities("claude-code", {
-        list: "unsupported",
-        delete: "unsupported",
-      }),
-    );
-    api.listSessions.mockResolvedValue([session("y1", "install-y", "Y1")]);
-
-    renderDialog(toolY.id);
-
-    const row = (await screen.findByText("Y1")).closest("li") as HTMLElement;
-    fireEvent.click(within(row).getByRole("button", { name: "删除会话" }));
-
-    await screen.findByText(/确定要删除会话「Y1」吗/);
-    // 仅本地可用；原生相关选项禁用并给出原因。
-    expect(
-      screen.getByRole("radio", { name: /仅删除 VibeAcross 中的记录/ }),
-    ).toBeEnabled();
-    expect(
-      screen.getByRole("radio", { name: /仅删除 AI 工具中的会话/ }),
-    ).toBeDisabled();
-    expect(screen.getByRole("radio", { name: /同时删除两者/ })).toBeDisabled();
-    expect(screen.getAllByText(/暂不支持删除原生会话/).length).toBe(2);
-  });
-
-  it("原生删除失败时不清理本地记录并如实显示错误", async () => {
-    api.sessionCapabilities.mockResolvedValue(capabilities("opencode"));
-    api.syncNativeSessions.mockResolvedValue(
-      syncResult([session("x1", "install-x", "X1")]),
-    );
-    api.deleteSessionScoped.mockRejectedValue(
-      Object.assign(new Error("删除原生会话失败（HTTP 500）。"), {
-        code: "NATIVE_DELETE_FAILED",
-      }),
-    );
-
-    renderDialog(toolX.id);
-
-    const row = (await screen.findByText("X1")).closest("li") as HTMLElement;
-    fireEvent.click(within(row).getByRole("button", { name: "删除会话" }));
-    await screen.findByText(/确定要删除会话「X1」吗/);
-
-    fireEvent.click(screen.getByRole("radio", { name: /同时删除两者/ }));
-    fireEvent.click(screen.getByRole("button", { name: "删除" }));
-
-    await waitFor(() =>
-      expect(api.deleteSessionScoped).toHaveBeenCalledWith("x1", "both"),
-    );
-    // 本地记录保留，行仍在，且显示错误。
-    await screen.findByText(/删除原生会话失败/);
-    expect(screen.getByText("X1")).toBeInTheDocument();
-  });
-
-  it("取消确认不执行任何删除操作", async () => {
-    api.sessionCapabilities.mockResolvedValue(capabilities("opencode"));
-    api.syncNativeSessions.mockResolvedValue(
-      syncResult([session("x1", "install-x", "X1")]),
-    );
-
-    renderDialog(toolX.id);
-
-    const row = (await screen.findByText("X1")).closest("li") as HTMLElement;
-    fireEvent.click(within(row).getByRole("button", { name: "删除会话" }));
-    await screen.findByText(/确定要删除会话「X1」吗/);
-
-    fireEvent.click(screen.getByRole("button", { name: "取消" }));
-
-    await waitFor(() =>
-      expect(
-        screen.queryByText(/确定要删除会话「X1」吗/),
-      ).not.toBeInTheDocument(),
-    );
-    expect(api.deleteSessionScoped).not.toHaveBeenCalled();
+    expect(await screen.findByText("原生会话已删除")).toBeInTheDocument();
     expect(screen.getByText("X1")).toBeInTheDocument();
   });
 });
@@ -695,5 +598,23 @@ describe("RunSessionDialog 加载状态", () => {
     expect(await screen.findByText("X1")).toBeInTheDocument();
     expect(api.syncNativeSessions).toHaveBeenCalledTimes(1);
     expect(api.sessionCapabilities).toHaveBeenCalledTimes(1);
+  });
+
+  it("有旧项目遗留的原生会话被跳过时如实提示，不谎称已纳入", async () => {
+    api.sessionCapabilities.mockResolvedValue(capabilities("opencode"));
+    api.syncNativeSessions.mockResolvedValue({
+      state: "available",
+      sessions: [],
+      skipped: 2,
+    });
+
+    renderDialog(toolX.id);
+
+    expect(
+      await screen.findByText("部分历史会话未纳入本项目"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/有 2 条历史会话原属于已被移除的项目/),
+    ).toBeInTheDocument();
   });
 });

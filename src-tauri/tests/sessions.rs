@@ -8,6 +8,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use vibeacross_lib::db::Database;
+use vibeacross_lib::native_claims;
 use vibeacross_lib::project_tools;
 use vibeacross_lib::projects;
 use vibeacross_lib::sessions::{self, SessionInput, SessionQuery, SessionStatus};
@@ -294,6 +295,47 @@ fn native_session_id_is_unique_within_association_only() {
 }
 
 #[test]
+fn claim_is_rolled_back_when_native_session_insert_fails() {
+    // 归属登记与会话行必须原子写入：登记成功但会话写入失败时，归属必须一并回滚，
+    // 否则会残留「已认领却无会话」的记录，永久阻塞该原生会话。
+    let workspace = tempfile::tempdir().unwrap();
+    let db = memory_db();
+    let conn = db.conn().unwrap();
+    let exe = stub_exe(workspace.path(), "Cursor.exe");
+    let detector = StubDetector::new().with_file(&exe);
+    let project_id = import_project(&conn, &make_dir(workspace.path(), "proj"));
+    let tool_id = add_tool(&conn, &detector, tool_input("cursor", &exe));
+    let association = project_tools::ensure(&conn, &project_id, &tool_id).unwrap();
+
+    // 绕过归属登记，直接制造一条已占用 (关联, 原生 ID) 的会话行。
+    conn.execute(
+        "INSERT INTO sessions
+            (id, project_tool_id, display_name, native_session_id, status, created_at, updated_at)
+         VALUES ('pre-existing', ?1, '手工会话', 'native-rollback', 'active', 't', 't')",
+        rusqlite::params![association.id],
+    )
+    .unwrap();
+    assert!(
+        native_claims::owner_project(&conn, "cursor", "native-rollback")
+            .unwrap()
+            .is_none(),
+        "前置条件：该原生会话尚未被认领"
+    );
+
+    // 同一 (关联, 原生 ID) 再次写入会撞唯一索引而失败。
+    let error = sessions::insert_native(&conn, &association.id, "新会话", "native-rollback", None)
+        .unwrap_err();
+    assert_eq!(error.code, "SESSION_NATIVE_ID_DUPLICATE");
+
+    // 关键断言：会话写入失败后，归属登记必须一并回滚（不得残留）。
+    assert_eq!(
+        native_claims::owner_project(&conn, "cursor", "native-rollback").unwrap(),
+        None,
+        "会话行写入失败后不得残留归属登记"
+    );
+}
+
+#[test]
 fn sessions_are_isolated_per_tool() {
     let workspace = tempfile::tempdir().unwrap();
     let db = memory_db();
@@ -354,6 +396,13 @@ fn rename_status_and_touch_update_session() {
     )
     .unwrap();
     assert!(active_only.is_empty());
+
+    // `nativeDeleted` 是删除流程写入的只读状态，不能由普通状态接口伪造。
+    let rejected =
+        sessions::set_status(&conn, &session.id, SessionStatus::NativeDeleted).unwrap_err();
+    assert_eq!(rejected.code, "SESSION_STATUS_INVALID");
+    let marked = sessions::mark_native_deleted(&conn, &session.id).unwrap();
+    assert_eq!(marked.status, SessionStatus::NativeDeleted);
 
     let touched = sessions::touch(&conn, &session.id).unwrap();
     assert!(touched.last_used_at.is_some());

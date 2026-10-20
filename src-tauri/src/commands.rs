@@ -543,6 +543,7 @@ pub fn touch_session(db: State<Database>, id: String) -> Result<Session, AppErro
     sessions::touch(&conn, &id)
 }
 
+/// 旧版仅本地删除兼容函数；不注册为 IPC，前端必须使用带明确范围的命令。
 #[tauri::command]
 pub fn delete_session(db: State<Database>, id: String) -> Result<(), AppError> {
     let conn = db.conn()?;
@@ -552,8 +553,9 @@ pub fn delete_session(db: State<Database>, id: String) -> Result<(), AppError> {
 /// 按选定范围删除会话（仅本地 / 仅原生 / 两者）。
 ///
 /// 范围与执行顺序全部由后端协调：`local` 只清理本地记录、绝不调用原生删除；
-/// `native` 只删除原生会话、保留本地记录；`both` 必须先成功删除原生会话再清理本地
-/// 记录。工具不支持 / 未核实原生删除时如实报错，绝不伪造能力或静默降级。
+/// `native` 只删除原生会话、保留本地记录并标记为原生会话已删除；`both` 必须先成功
+/// 删除原生会话再清理本地记录。工具不支持 / 未核实原生删除时如实报错，绝不伪造能力
+/// 或静默降级；原生成功但本地清理失败时返回带诊断原因的部分成功结果，供前端提示重试。
 #[tauri::command]
 pub fn delete_session_scoped(
     db: State<Database>,

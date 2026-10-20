@@ -8,7 +8,12 @@ import {
   useState,
 } from "react";
 import type { ReactNode } from "react";
-import type { LaunchResult, Project, ProjectHealth, ProjectSort } from "../types/domain";
+import type {
+  LaunchResult,
+  Project,
+  ProjectHealth,
+  ProjectSort,
+} from "../types/domain";
 import { t } from "../i18n/translate";
 import {
   isDesktopRuntime,

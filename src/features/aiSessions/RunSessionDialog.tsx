@@ -15,22 +15,19 @@ import { isBackendError, toErrorMessage } from "../../services/backend";
 import { launchProject } from "../../services/projects";
 import {
   createNativeSession,
-  deleteSessionScoped,
   listSessions,
   renameNativeSession,
   restoreNativeSession,
   sessionCapabilities,
   syncNativeSessions,
 } from "../../services/sessions";
+import { DeleteSessionDialog } from "./DeleteSessionDialog";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
-import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { LoadingState } from "../../components/ui/LoadingState";
 import { Modal } from "../../components/ui/Modal";
 import { Notice } from "../../components/ui/Notice";
-import { RadioGroup } from "../../components/ui/RadioGroup";
-import type { RadioOption } from "../../components/ui/RadioGroup";
 import { SelectField } from "../../components/ui/SelectField";
 import { TextField } from "../../components/ui/TextField";
 import { formatRelativeTime } from "../../utils/format";
@@ -45,7 +42,6 @@ import type {
   Project,
   ToolEntry,
   AiSession,
-  DeleteScope,
   HistoryQueryState,
   NativeSessionCapabilities,
   SessionDeleteOutcome,
@@ -78,6 +74,7 @@ interface HistorySnapshot {
   capabilities: NativeSessionCapabilities;
   sessions: AiSession[];
   state: HistoryQueryState | null;
+  skipped: number;
 }
 
 /**
@@ -87,8 +84,8 @@ interface HistorySnapshot {
  *  - 只展示当前项目 + 所选工具的历史会话；切换工具立即重新加载；
  *  - 仅在工具如实支持时才提供创建 / 恢复操作；
  *  - 后端确认创建 / 恢复成功后，才显示成功状态；
- *  - 删除前必须二次确认；工具已核实支持时先删除工具中的原生会话再清理本地记录，
- *    否则明确告知用户「仅删除本地记录、工具中的会话保留」，绝不静默退化。
+ *  - 删除必须明确选择本地 / 原生 / 两者范围；原生删除需要二次确认，且仅在
+ *    后端核实支持时提供。
  */
 export function RunSessionDialog({
   open,
@@ -112,6 +109,7 @@ export function RunSessionDialog({
   const [historyState, setHistoryState] = useState<HistoryQueryState | null>(
     null,
   );
+  const [skippedCount, setSkippedCount] = useState(0);
   const [opening, setOpening] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -127,9 +125,8 @@ export function RunSessionDialog({
   const [editName, setEditName] = useState("");
   const [editSyncNative, setEditSyncNative] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AiSession | null>(null);
   const [markedMissing, setMarkedMissing] = useState<Set<string>>(new Set());
-  const [confirmDelete, setConfirmDelete] = useState<AiSession | null>(null);
-  const [deleteScope, setDeleteScope] = useState<DeleteScope>("local");
   const requestRef = useRef(0);
   // 同一「项目 + 工具 + 刷新批次」的并发读取去重：命中在途请求则复用其 Promise，
   // 避免因重复渲染 / StrictMode 二次挂载等触发重复查询。
@@ -146,12 +143,14 @@ export function RunSessionDialog({
   useEffect(() => {
     if (!open) {
       requestRef.current += 1;
+      setDeleteTarget(null);
       return;
     }
     setToolId(initialToolId ?? tools[0]?.id ?? null);
     setCapabilities(null);
     setSessions([]);
     setHistoryState(null);
+    setSkippedCount(0);
     setOpening(false);
     setLoading(false);
     setLoaded(false);
@@ -166,9 +165,8 @@ export function RunSessionDialog({
     setEditName("");
     setEditSyncNative(false);
     setEditError(null);
+    setDeleteTarget(null);
     setMarkedMissing(new Set());
-    setConfirmDelete(null);
-    setDeleteScope("local");
     // 仅在打开 / 切换项目时重置；工具与初始工具从最新 props 读取即可。
   }, [open, projectId]);
 
@@ -217,14 +215,16 @@ export function RunSessionDialog({
         const caps = await sessionCapabilities(tool.toolId);
         let list: AiSession[];
         let state: HistoryQueryState | null = null;
+        let skipped = 0;
         if (caps.list === "supported") {
           const outcome = await syncNativeSessions(projectId, toolId);
           list = outcome.sessions;
           state = outcome.state;
+          skipped = outcome.skipped ?? 0;
         } else {
           list = await listSessions({ projectId, toolId });
         }
-        return { capabilities: caps, sessions: list, state };
+        return { capabilities: caps, sessions: list, state, skipped };
       })();
       inflightRef.current.set(key, request);
       const cleanup = () => {
@@ -243,6 +243,7 @@ export function RunSessionDialog({
         setCapabilities(snapshot.capabilities);
         setSessions(snapshot.sessions);
         setHistoryState(snapshot.state);
+        setSkippedCount(snapshot.skipped);
         setMarkedMissing(new Set());
         setLoaded(true);
       })
@@ -316,17 +317,18 @@ export function RunSessionDialog({
         launch: true,
       });
       bumpRevision();
-      if (outcome.launchError) {
-        // 会话已真实创建，但启动失败：如实报告，并刷新列表。
-        setMode("list");
-        setNewName("");
-        setNotice({
-          tone: "warning",
-          title: t("aiSession.successCreatedNoLaunch", {
+      // 启动失败意味着「会话已创建，但后续启动步骤未完成」，如实报告并刷新列表；
+      // 绝不谎报完全成功。
+      const warning = outcome.launchError
+        ? t("aiSession.successCreatedNoLaunch", {
             name: outcome.session.displayName,
             reason: outcome.launchError.message,
-          }),
-        });
+          })
+        : null;
+      if (warning) {
+        setMode("list");
+        setNewName("");
+        setNotice({ tone: "warning", title: warning });
         setReloadKey((key) => key + 1);
       } else {
         setNotice({
@@ -406,102 +408,70 @@ export function RunSessionDialog({
     }
   }
 
-  // 是否可删除原生会话：工具已核实支持删除，且该记录确有原生标识。
-  function canDeleteNative(session: AiSession): boolean {
-    return capabilities?.delete === "supported" && session.nativeSessionId != null;
-  }
-
-  // 原生删除不可用时的原因（用于禁用「仅原生 / 两者」选项）。
-  function nativeDeleteBlockReason(session: AiSession): string {
-    if (session.nativeSessionId == null) {
-      return t("aiSession.deleteScopeNoNativeId");
-    }
-    return t("aiSession.deleteScopeNativeUnsupported", {
-      tool: session.toolName ?? selectedTool?.name ?? "",
-    });
-  }
-
-  // 删除范围选项：默认「仅本地记录」（风险最低）；原生相关选项在不可用时禁用并说明原因。
-  function deleteScopeOptions(session: AiSession): RadioOption<DeleteScope>[] {
-    const nativeAvailable = canDeleteNative(session);
-    const blockReason = nativeAvailable
-      ? undefined
-      : nativeDeleteBlockReason(session);
-    return [
-      {
-        value: "local",
-        label: t("aiSession.deleteScopeLocal"),
-        description: t("aiSession.deleteScopeLocalDesc"),
-      },
-      {
-        value: "native",
-        label: t("aiSession.deleteScopeNative"),
-        description: t("aiSession.deleteScopeNativeDesc"),
-        note: t("aiSession.deleteScopeNativeNote"),
-        disabled: !nativeAvailable,
-        disabledReason: blockReason,
-      },
-      {
-        value: "both",
-        label: t("aiSession.deleteScopeBoth"),
-        description: t("aiSession.deleteScopeBothDesc"),
-        note: t("aiSession.deleteScopeBothNote"),
-        disabled: !nativeAvailable,
-        disabledReason: blockReason,
-      },
-    ];
-  }
-
-  // 按实际结果如实提示（仅本地 / 仅原生 / 两者）。
-  function deleteNotice(
+  function handleDeleteCompleted(
+    target: AiSession,
     outcome: SessionDeleteOutcome,
-    name: string,
-  ): DialogNotice {
-    if (outcome.scope === "local") {
-      return { tone: "success", title: t("aiSession.deletedLocalOnly", { name }) };
-    }
-    if (outcome.scope === "native") {
-      return {
-        tone: outcome.nativeAlreadyGone ? "warning" : "success",
-        title: outcome.nativeAlreadyGone
-          ? t("aiSession.deleteNativeAlreadyGoneOnly", { name })
-          : t("aiSession.deletedNativeOnly", { name }),
-      };
-    }
-    return {
-      tone: outcome.nativeAlreadyGone ? "warning" : "success",
-      title: outcome.nativeAlreadyGone
-        ? t("aiSession.deletedBothNativeAlreadyGone", { name })
-        : t("aiSession.deletedWithNative", { name }),
-    };
-  }
-
-  async function handleDelete() {
-    if (!confirmDelete) {
-      return;
-    }
-    const target = confirmDelete;
-    const name = aiSessionName(target);
-    setBusyId(target.id);
+  ) {
+    setDeleteTarget(null);
     setError(null);
     setNotice(null);
-    try {
-      // 范围与执行顺序由后端协调；任何失败都会如实报错，本地记录不会被误删。
-      const outcome = await deleteSessionScoped(target.id, deleteScope);
-      bumpRevision();
-      if (outcome.localDeleted) {
-        // 本地记录已清理 → 从当前列表移除。
-        setSessions((prev) => prev.filter((item) => item.id !== target.id));
-      } else {
-        // 仅删除原生会话：本地记录保留，标记为原生会话已不存在。
-        setMarkedMissing((prev) => new Set(prev).add(target.id));
-      }
-      setConfirmDelete(null);
-      setNotice(deleteNotice(outcome, name));
-    } catch (cause) {
-      setError(toErrorMessage(cause, t("aiSession.deleteFailed")));
-    } finally {
-      setBusyId(null);
+    bumpRevision();
+
+    if (outcome.localCleanupFailed) {
+      setSessions((prev) =>
+        prev.map((item) =>
+          item.id === target.id && outcome.nativeDeleted
+            ? { ...item, status: "nativeDeleted" }
+            : item,
+        ),
+      );
+      setNotice({
+        tone: "warning",
+        title: t("aiSession.deletePartialNativeOnly", {
+          reason: outcome.localCleanupError ?? t("aiSession.deleteFailed"),
+        }),
+      });
+      return;
+    }
+
+    if (outcome.localDeleted) {
+      setSessions((prev) => prev.filter((item) => item.id !== target.id));
+      setMarkedMissing((prev) => {
+        const next = new Set(prev);
+        next.delete(target.id);
+        return next;
+      });
+    } else if (outcome.nativeDeleted) {
+      setSessions((prev) =>
+        prev.map((item) =>
+          item.id === target.id ? { ...item, status: "nativeDeleted" } : item,
+        ),
+      );
+    }
+
+    if (outcome.scope === "local") {
+      setNotice({
+        tone: "success",
+        title: t("aiSession.deletedLocalOnly", {
+          name: aiSessionName(target),
+        }),
+      });
+    } else if (outcome.scope === "native") {
+      setNotice({
+        tone: "success",
+        title: outcome.nativeAlreadyGone
+          ? t("aiSession.deleteNativeAlreadyGoneOnly")
+          : t("aiSession.deletedNativeOnly"),
+      });
+    } else {
+      setNotice({
+        tone: "success",
+        title: outcome.nativeAlreadyGone
+          ? t("aiSession.deletedBothNativeAlreadyGone")
+          : t("aiSession.deletedWithNative", {
+              name: aiSessionName(target),
+            }),
+      });
     }
   }
 
@@ -694,6 +664,15 @@ export function RunSessionDialog({
                   </div>
                 )}
 
+                {mode === "list" && skippedCount > 0 && (
+                  <Notice
+                    tone="warning"
+                    title={t("aiSession.skippedNoticeTitle")}
+                  >
+                    {t("aiSession.skippedNoticeBody", { count: skippedCount })}
+                  </Notice>
+                )}
+
                 {showLoading ? (
                   <LoadingState label={t("aiSession.loading")} />
                 ) : historyState && historyState !== "available" ? (
@@ -727,7 +706,8 @@ export function RunSessionDialog({
                                   setEditName(event.target.value)
                                 }
                               />
-                              {canSyncNative ? (
+                              {canSyncNative &&
+                              session.status !== "nativeDeleted" ? (
                                 <label className={styles.checkbox}>
                                   <input
                                     type="checkbox"
@@ -741,7 +721,9 @@ export function RunSessionDialog({
                                 </label>
                               ) : (
                                 <p className={styles.hint}>
-                                  {t("aiSession.localOnlyNote")}
+                                  {session.status === "nativeDeleted"
+                                    ? t("aiSession.nativeDeletedRenameHint")
+                                    : t("aiSession.localOnlyNote")}
                                 </p>
                               )}
                               <div className={styles.formActions}>
@@ -827,13 +809,10 @@ export function RunSessionDialog({
                                   variant="ghost"
                                   size="sm"
                                   icon={<Trash2 size={14} aria-hidden="true" />}
-                                  onClick={() => {
-                                    setDeleteScope("local");
-                                    setConfirmDelete(session);
-                                  }}
+                                  onClick={() => setDeleteTarget(session)}
                                   disabled={anyBusy}
                                 >
-                                  {t("aiSession.delete")}
+                                  {t("common.delete")}
                                 </Button>
                               </div>
                             </>
@@ -856,39 +835,19 @@ export function RunSessionDialog({
         )}
       </Modal>
 
-      <ConfirmDialog
-        open={confirmDelete !== null}
-        title={t("aiSession.deleteTitle")}
-        description={
-          confirmDelete
-            ? `${t("aiSession.deleteConfirmName", {
-                name: aiSessionName(confirmDelete),
-              })} ${t("aiSession.deleteContext", {
-                project: confirmDelete.projectName ?? project?.name ?? "",
-                tool:
-                  confirmDelete.toolName ??
-                  selectedTool?.name ??
-                  t("projectList.noTool"),
-              })}`
-            : undefined
-        }
-        confirmLabel={t("common.delete")}
-        tone="danger"
-        busy={busyId !== null}
-        onConfirm={handleDelete}
-        onClose={() => setConfirmDelete(null)}
-      >
-        {confirmDelete && (
-          <RadioGroup
-            name="delete-scope"
-            value={deleteScope}
-            options={deleteScopeOptions(confirmDelete)}
-            onChange={setDeleteScope}
-            ariaLabel={t("aiSession.deleteScopeLabel")}
-            disabled={busyId !== null}
-          />
-        )}
-      </ConfirmDialog>
+      <DeleteSessionDialog
+        open={open && deleteTarget !== null}
+        session={deleteTarget}
+        projectName={project?.name ?? ""}
+        toolName={selectedTool?.name ?? deleteTarget?.toolName ?? ""}
+        capabilities={capabilities ?? undefined}
+        onClose={() => setDeleteTarget(null)}
+        onCompleted={(outcome) => {
+          if (deleteTarget) {
+            handleDeleteCompleted(deleteTarget, outcome);
+          }
+        }}
+      />
     </>
   );
 }

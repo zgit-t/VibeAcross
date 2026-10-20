@@ -10,11 +10,13 @@ pub mod launch;
 pub mod migrations;
 pub mod models;
 pub mod native;
+pub mod native_claims;
 pub mod project_tools;
 pub mod projects;
 pub mod search;
 pub mod sessions;
 pub mod settings;
+pub mod shared_context;
 pub mod shell;
 pub mod tasks;
 pub mod tools;
@@ -140,7 +142,6 @@ pub fn run() {
             commands::rename_session,
             commands::set_session_status,
             commands::touch_session,
-            commands::delete_session,
             commands::delete_session_scoped,
             commands::session_capabilities,
             commands::list_native_sessions,

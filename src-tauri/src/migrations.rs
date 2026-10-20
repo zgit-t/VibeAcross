@@ -32,6 +32,26 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0008_project_current_tool",
         include_str!("../migrations/0008_project_current_tool.sql"),
     ),
+    (
+        "0009_memory_files",
+        include_str!("../migrations/0009_memory_files.sql"),
+    ),
+    (
+        "0010_memory_records",
+        include_str!("../migrations/0010_memory_records.sql"),
+    ),
+    (
+        "0011_memory_promotion",
+        include_str!("../migrations/0011_memory_promotion.sql"),
+    ),
+    (
+        "0012_native_session_claims",
+        include_str!("../migrations/0012_native_session_claims.sql"),
+    ),
+    (
+        "0013_context_reference_entries",
+        include_str!("../migrations/0013_context_reference_entries.sql"),
+    ),
 ];
 
 /// 当前应用支持的最新数据库版本（等于已登记迁移的数量）。
